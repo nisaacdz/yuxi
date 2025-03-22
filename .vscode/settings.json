@@ -1,0 +1,21 @@
+{
+    "editor.formatOnSave": true,
+    "cSpell.words": [
+        "codegen",
+        "dotenv",
+        "dotenvy",
+        "Iden",
+        "nonblocking",
+        "oneshot",
+        "openapi",
+        "prefork",
+        "Serde",
+        "Utoipa"
+    ],
+    "cSpell.ignorePaths": [
+        "**/.cargo",
+        "**/.rustup",
+        ".vscode",
+        "LICENSE"
+    ]
+}

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      # cargo build before check to speed up check
+      - run: cargo build --no-default-features && cargo check --no-default-features
+        if: matrix.os == 'windows-latest'
+      - run: cargo build && cargo check
+        if: matrix.os != 'windows-latest'
+
+      - run: cargo fmt && cargo clippy --no-default-features
+        if: matrix.os == 'windows-latest'
+      - run: cargo fmt && cargo clippy
+        if: matrix.os != 'windows-latest'
+
+      - run: cargo test --no-default-features
+        if: matrix.os == 'windows-latest'
+      - run: cargo test
+        if: matrix.os != 'windows-latest'
+
+      - name: Run server
+        shell: bash # for windows
+        run: |
+          cp .env.example .env
+          ./target/debug/clean-axum &
+          while ! curl --output /dev/null --silent --head --fail http://localhost:3000; do sleep 0.5; done; echo ok;
+
+      - name: Check server
+        run: |
+          curl -sX POST http://localhost:3000/users -H "Content-Type: application/json" -d '{"username":"abc"}'
+          curl -s http://localhost:3000/users?username=

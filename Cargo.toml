@@ -1,0 +1,59 @@
+[package]
+name = "clean-axum"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# docs
+authors = ["Weiliang Li <to.be.impressive@gmail.com>"]
+description = "Axum scaffold with clean architecture"
+license = "MIT"
+readme = "README.md"
+
+[workspace]
+members = ["api", "app", "doc", "models", "migration", "utils"]
+
+[workspace.dependencies]
+axum = { version = "0.7.5", default-features = false }
+tower = { version = "0.5.0", default-features = false }
+sea-orm = { version = "1.0.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", default-features = false }
+tracing = "0.1.40"
+utoipa = { version = "5.0.0-alpha.0", default-features = false }
+validator = { version = "0.18", default-features = false }
+
+[dependencies]
+api = { path = "api" }
+utils = { path = "utils" }
+doc = { path = "doc" }
+
+sea-orm = { workspace = true }
+
+# logging
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+# runtime
+axum = { workspace = true, features = ["tokio", "http1", "http2"] }
+tokio = { version = "1.38.0", features = ["full"] }
+prefork = { version = "0.5.1", default-features = false, optional = true }
+
+# shuttle runtime
+shuttle-axum = { version = "0.47.0", optional = true }
+shuttle-runtime = { version = "0.47.0", optional = true }
+shuttle-shared-db = { version = "0.47.0", features = [
+    "postgres",
+], optional = true }
+
+[dev-dependencies]
+app = { path = "app" }
+models = { path = "models" }
+
+http-body-util = "0.1.2"
+serde_json = { workspace = true }
+
+[features]
+default = ["prefork"]
+prefork = ["prefork/tokio"]
+shuttle = ["shuttle-axum", "shuttle-runtime", "shuttle-shared-db"]
