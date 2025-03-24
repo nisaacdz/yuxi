@@ -1,2 +1,2 @@
-pub mod blog;
+pub mod tournaments;
 pub mod user;

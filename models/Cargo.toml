@@ -13,6 +13,9 @@ sea-orm = { workspace = true, features = [
   "sqlx-sqlite",
   "runtime-tokio-rustls",
   "macros",
+  "with-chrono",
+  "with-rust_decimal",
+  "with-json",
 ] }
 validator = { workspace = true, features = ["derive"] }
 utoipa = { workspace = true }

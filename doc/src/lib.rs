@@ -3,8 +3,8 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as ScalarServable};
 use utoipa_swagger_ui::SwaggerUi;
 
-mod blog;
 mod root;
+mod tournament;
 mod user;
 
 #[derive(OpenApi)]
@@ -12,12 +12,12 @@ mod user;
     nest(
         (path = "/", api = root::RootApi),
         (path = "/users", api = user::UserApi),
-        (path = "/blogs", api = blog::BlogApi),
+        (path = "/tournaments", api = tournament::TournamentApi),
     ),
     tags(
         (name = "root", description = "Root API"),
         (name = "user", description = "User API"),
-        (name = "blog", description = "Blog API"),
+        (name = "tournament", description = "Tournament API"),
 
     )
 )]
