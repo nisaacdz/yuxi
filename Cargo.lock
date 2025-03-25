@@ -3,31 +3,6 @@
 version = 4
 
 [[package]]
-name = "Yuxi"
-version = "0.1.0"
-dependencies = [
- "api",
- "app",
- "axum",
- "http-body-util",
- "models",
- "prefork",
- "sea-orm",
- "serde_json",
- "shuttle-axum",
- "shuttle-runtime",
- "shuttle-shared-db",
- "socketioxide",
- "tokio",
- "tower-service",
- "tower-sessions",
- "tracing",
- "tracing-subscriber",
- "utils",
- "uuid",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4795,6 +4770,31 @@ dependencies = [
  "quote",
  "syn 2.0.100",
  "synstructure",
+]
+
+[[package]]
+name = "yuxi"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "app",
+ "axum",
+ "http-body-util",
+ "models",
+ "prefork",
+ "sea-orm",
+ "serde_json",
+ "shuttle-axum",
+ "shuttle-runtime",
+ "shuttle-shared-db",
+ "socketioxide",
+ "tokio",
+ "tower-service",
+ "tower-sessions",
+ "tracing",
+ "tracing-subscriber",
+ "utils",
+ "uuid",
 ]
 
 [[package]]

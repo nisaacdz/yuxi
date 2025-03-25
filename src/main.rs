@@ -1,4 +1,4 @@
-use Yuxi::*;
+use yuxi::*;
 
 #[cfg(not(feature = "shuttle"))]
 fn main() {
