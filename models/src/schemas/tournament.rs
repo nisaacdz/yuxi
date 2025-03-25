@@ -1,4 +1,4 @@
-use sea_orm::prelude::DateTime;
+use sea_orm::prelude::DateTimeUtc;
 use serde::Serialize;
 
 use crate::domains::tournaments;
@@ -7,9 +7,9 @@ use crate::domains::tournaments;
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,
-    pub created_at: DateTime,
+    pub created_at: DateTimeUtc,
     pub created_by: i32,
-    pub scheduled_for: DateTime,
+    pub scheduled_for: DateTimeUtc,
 }
 
 impl From<tournaments::Model> for TournamentSchema {

@@ -14,7 +14,7 @@ pub struct Model {
     pub accuracy: Option<Decimal>,
     #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
     pub wpm: Option<Decimal>,
-    pub created_at: Option<DateTime>,
+    pub created_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

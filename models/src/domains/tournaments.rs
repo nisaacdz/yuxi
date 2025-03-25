@@ -8,10 +8,10 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub title: String,
-    pub created_at: DateTime,
+    pub created_at: DateTimeUtc,
     pub created_by: i32,
-    pub scheduled_for: DateTime,
-    pub started_at: Option<DateTime>,
+    pub scheduled_for: DateTimeUtc,
+    pub started_at: Option<DateTimeUtc>,
     pub privacy: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub text_options: Option<Json>,

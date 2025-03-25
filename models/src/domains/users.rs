@@ -12,8 +12,8 @@ pub struct Model {
     #[sea_orm(unique)]
     pub email: String,
     pub passhash: String,
-    pub created_at: Option<DateTime>,
-    pub updated_at: Option<DateTime>,
+    pub created_at: Option<DateTimeUtc>,
+    pub updated_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

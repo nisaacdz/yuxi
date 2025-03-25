@@ -2,6 +2,7 @@ pub struct Config {
     pub db_url: String,
     pub host: String,
     pub port: u32,
+    pub redis_url: String,
     pub prefork: bool,
 }
 
@@ -14,6 +15,7 @@ impl Config {
                 .expect("PORT is not set in .env file")
                 .parse()
                 .expect("PORT is not a number"),
+            redis_url: std::env::var("REDIS_URL").expect("REDIS_URL is not set in .env file"),
             prefork: std::env::var("PREFORK").is_ok_and(|v| v == "1"),
         }
     }

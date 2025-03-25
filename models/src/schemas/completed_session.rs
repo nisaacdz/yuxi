@@ -1,4 +1,4 @@
-use sea_orm::prelude::{DateTime, Decimal};
+use sea_orm::prelude::{DateTimeUtc, Decimal};
 use serde::Serialize;
 
 use crate::domains::sessions;
@@ -11,7 +11,7 @@ pub struct CompletedSessionSchema {
     pub text_id: i32,
     pub accuracy: Option<Decimal>,
     pub wpm: Option<Decimal>,
-    pub created_at: Option<DateTime>,
+    pub created_at: Option<DateTimeUtc>,
 }
 
 impl From<sessions::Model> for CompletedSessionSchema {
