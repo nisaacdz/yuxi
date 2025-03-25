@@ -1,9 +1,7 @@
-use serde::Serialize;
-use utoipa::ToSchema;
-
 use crate::domains::texts;
+use serde::Serialize;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct TextSchema {
     pub id: i32,
     pub content: String,
@@ -18,7 +16,7 @@ impl From<texts::Model> for TextSchema {
     }
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct TextListSchema {
     pub texts: Vec<TextSchema>,
 }

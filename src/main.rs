@@ -1,5 +1,4 @@
-#[cfg(not(feature = "shuttle"))]
-mod tokio;
+use Yuxi::*;
 
 #[cfg(not(feature = "shuttle"))]
 fn main() {
@@ -16,9 +15,6 @@ fn main() {
     tracing::info!("Starting with tokio");
     tokio::run();
 }
-
-#[cfg(feature = "shuttle")]
-mod shuttle;
 
 #[cfg(feature = "shuttle")]
 #[shuttle_runtime::main]

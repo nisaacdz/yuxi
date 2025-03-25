@@ -3,7 +3,7 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(schema_name = "public", table_name = "completed_sessions")]
+#[sea_orm(schema_name = "public", table_name = "sessions")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,

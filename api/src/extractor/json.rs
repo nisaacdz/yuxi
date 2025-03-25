@@ -1,5 +1,5 @@
 use axum::{
-    extract::FromRequest,
+    extract::{FromRequest, Json as AxumJson},
     response::{IntoResponse, Response},
 };
 use validator::Validate;
@@ -7,7 +7,7 @@ use validator::Validate;
 use crate::error::ApiError;
 
 #[derive(FromRequest)]
-#[from_request(via(axum::Json), rejection(ApiError))]
+#[from_request(via(AxumJson), rejection(ApiError))]
 pub struct Json<T>(pub T);
 
 impl<T> IntoResponse for Json<T>

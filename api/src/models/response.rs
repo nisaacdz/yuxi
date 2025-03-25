@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use utoipa::ToSchema;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct ApiErrorResponse {
     pub message: String,
 }
 
-#[derive(Serialize, ToSchema)]
-#[aliases(ParamsErrorResponse = ValidationErrorResponse<HashMap<String, Vec<HashMap<String, String>>>>)]
+#[derive(Serialize)]
 pub struct ValidationErrorResponse<T> {
     pub message: String,
     pub details: T,

@@ -1,10 +1,9 @@
 use sea_orm::prelude::DateTime;
 use serde::Serialize;
-use utoipa::ToSchema;
 
 use crate::domains::tournaments;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,
@@ -25,7 +24,7 @@ impl From<tournaments::Model> for TournamentSchema {
     }
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct TournamentListSchema {
     pub tournaments: Vec<TournamentSchema>,
 }

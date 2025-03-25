@@ -17,17 +17,6 @@ use models::schemas::user::{UserListSchema, UserSchema};
 use crate::error::ApiError;
 use crate::extractor::{Json, Valid};
 
-#[utoipa::path(
-    post,
-    path = "",
-    request_body = CreateUserParams,
-    responses(
-        (status = 201, description = "User created", body = UserSchema),
-        (status = 400, description = "Bad request", body = ApiErrorResponse),
-        (status = 422, description = "Validation error", body = ParamsErrorResponse),
-        (status = 500, description = "Internal server error", body = ApiErrorResponse),
-    )
-)]
 async fn users_post(
     state: State<AppState>,
     Valid(Json(params)): Valid<Json<CreateUserParams>>,
@@ -40,22 +29,12 @@ async fn users_post(
     Ok((StatusCode::CREATED, Json(UserSchema::from(user))))
 }
 
-#[utoipa::path(
-    get,
-    path = "",
-    params(
-        UserQuery
-    ),
-    responses(
-        (status = 200, description = "List users", body = UserListSchema),
-        (status = 500, description = "Internal server error", body = ApiErrorResponse),
-    )
-)]
+#[axum::debug_handler]
 async fn users_get(
-    state: State<AppState>,
-    query: Option<Query<UserQuery>>,
+    State(state): State<AppState>,
+    Query(query): Query<Option<UserQuery>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let Query(query) = query.unwrap_or_default();
+    let query = query.unwrap_or_default();
 
     let users = search_users(&state.conn, query)
         .await
@@ -63,18 +42,6 @@ async fn users_get(
     Ok(Json(UserListSchema::from(users)))
 }
 
-#[utoipa::path(
-    get,
-    path = "/{id}",
-    params(
-        ("id" = i32, Path, description = "User id")
-    ),
-    responses(
-        (status = 200, description = "Get user", body = UserSchema),
-        (status = 404, description = "Not found", body = ApiErrorResponse),
-        (status = 500, description = "Internal server error", body = ApiErrorResponse),
-    )
-)]
 async fn users_id_get(
     state: State<AppState>,
     Path(id): Path<i32>,

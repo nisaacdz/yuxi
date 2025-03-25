@@ -18,4 +18,3 @@ sea-orm = { workspace = true, features = [
   "with-json",
 ] }
 validator = { workspace = true, features = ["derive"] }
-utoipa = { workspace = true }

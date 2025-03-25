@@ -5,13 +5,6 @@ use app::state::AppState;
 
 use crate::error::ApiError;
 
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = 200, description = "Hello world", body = String)
-    )
-)]
 async fn root_get(state: State<AppState>) -> Result<String, ApiError> {
     let result = state
         .conn

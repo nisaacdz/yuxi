@@ -1,5 +1,4 @@
 use api::{setup_db, setup_router};
-use doc::ApiDoc;
 use utils::migrate;
 
 pub async fn run(db_url: &str) -> shuttle_axum::ShuttleAxum {
@@ -8,6 +7,6 @@ pub async fn run(db_url: &str) -> shuttle_axum::ShuttleAxum {
     let conn = setup_db(&db_url, false).await;
     migrate(&conn).await.expect("Migration failed!");
 
-    let router = setup_router(conn).attach_doc();
+    let router = setup_router(conn);
     Ok(router.into())
 }

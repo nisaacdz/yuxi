@@ -1,9 +1,8 @@
 use serde::Serialize;
-use utoipa::ToSchema;
 
 use crate::domains::users;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct UserSchema {
     pub id: i32,
     pub username: String,
@@ -20,7 +19,7 @@ impl From<users::Model> for UserSchema {
     }
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct UserListSchema {
     pub users: Vec<UserSchema>,
 }

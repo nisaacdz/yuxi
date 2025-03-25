@@ -2,7 +2,7 @@
 
 pub mod prelude;
 
-pub mod completed_sessions;
+pub mod sessions;
 pub mod texts;
 pub mod tournaments;
 pub mod users;

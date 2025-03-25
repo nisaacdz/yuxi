@@ -16,17 +16,6 @@ use models::schemas::tournament::{TournamentListSchema, TournamentSchema};
 use crate::error::ApiError;
 use crate::extractor::{Json, Valid};
 
-#[utoipa::path(
-    post,
-    path = "",
-    request_body = CreateTournamentParams,
-    responses(
-        (status = 201, description = "Tournament created", body = TournamentSchema),
-        (status = 400, description = "Bad request", body = ApiErrorResponse),
-        (status = 422, description = "Validation error", body = ParamsErrorResponse),
-        (status = 500, description = "Internal server error", body = ApiErrorResponse),
-    )
-)]
 async fn tournaments_post(
     state: State<AppState>,
     Valid(Json(params)): Valid<Json<CreateTournamentParams>>,
@@ -42,22 +31,12 @@ async fn tournaments_post(
     ))
 }
 
-#[utoipa::path(
-    get,
-    path = "",
-    params(
-        TournamentQuery
-    ),
-    responses(
-        (status = 200, description = "List Tournaments", body = TournamentListSchema),
-        (status = 500, description = "Internal server error", body = ApiErrorResponse),
-    )
-)]
+#[axum::debug_handler]
 async fn tournaments_get(
     state: State<AppState>,
-    query: Option<Query<TournamentQuery>>,
+    Query(query): Query<Option<TournamentQuery>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let Query(query) = query.unwrap_or_default();
+    let query = query.unwrap_or_default();
 
     let tournaments = search_tournaments(&state.conn, query)
         .await
