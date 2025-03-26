@@ -1,13 +1,13 @@
 use crate::{
     cache::{
         redis_delete_typing_session, redis_get_tournament, redis_get_typing_session,
-        redis_set_typing_session,
+        redis_set_tournament, redis_set_typing_session,
     },
-    TypingSession, JOIN_DEADLINE,
+    TournamentInfo, TypingSession, JOIN_DEADLINE,
 };
 
 use super::UserSession;
-use app::persistence::tournaments::get_tournament;
+use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
 use sea_orm::DatabaseConnection;
 use socketioxide::extract::SocketRef;
@@ -27,6 +27,15 @@ pub async fn try_join_tournament(
                 user.user_id.clone(),
                 tournament.id.clone(),
             );
+            let redis_tournament = redis_get_tournament(&tournament.id).await;
+            if let None = redis_tournament {
+                let text = get_or_generate_text(&conn, tournament.id.clone())
+                    .await
+                    .unwrap();
+                let new_redis_tournament =
+                    TournamentInfo::new(tournament.id.clone(), text.chars().collect());
+                redis_set_tournament(&tournament.id, new_redis_tournament).await;
+            }
             redis_set_typing_session(&user.client_id, new_session).await;
             Ok(())
         } else {
@@ -55,7 +64,6 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
                     socket.emit("join-back", &e).ok();
                 }
             }
-            redis_delete_typing_session(&session.tournament_id, &user.client_id).await;
         }
     } else {
         // Join the tournament if it's valid and still open

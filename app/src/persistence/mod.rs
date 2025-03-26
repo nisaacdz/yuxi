@@ -1,2 +1,3 @@
 pub mod tournaments;
-pub mod user;
+pub mod users;
+pub mod text;

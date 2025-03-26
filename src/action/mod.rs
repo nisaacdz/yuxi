@@ -14,6 +14,11 @@ struct JoinArgs {
     tournament_id: String,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+struct TypeArgs {
+    character: char,
+}
+
 pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(data): Data<Value>) {
     // Middleware should have set the user session so we can unwrap safely
     let user = socket
@@ -48,8 +53,8 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(data):
 
     socket.on(
         "type",
-        async move |socket: SocketRef, Data::<String>(data)| {
-            typing_api::handle_typing(socket, data.as_bytes()[0] as char).await;
+        async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
+            typing_api::handle_typing(socket, character).await;
         },
     );
 

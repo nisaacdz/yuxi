@@ -27,6 +27,22 @@ pub struct TournamentInfo {
     pub total_joined: i32,
     pub total_remaining: i32,
     pub total_completed: i32,
+    pub automatized: bool,
+}
+
+impl TournamentInfo {
+    pub fn new(id: String, text: Vec<char>) -> Self {
+        Self {
+            id,
+            started_at: None,
+            ended_at: None,
+            text,
+            total_joined: 0,
+            total_remaining: 0,
+            total_completed: 0,
+            automatized: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
