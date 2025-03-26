@@ -27,6 +27,7 @@ chrono = { version = "0.4.40", features = ["serde"] }
 [dependencies]
 # Local dependencies
 api = { path = "api" }
+app = { path = "app" }
 utils = { path = "utils" }
 
 # Workspace dependencies

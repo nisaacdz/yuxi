@@ -1,5 +1,4 @@
-use chrono::{DateTime, Local};
-use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
+use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "shuttle")]
@@ -7,8 +6,11 @@ pub mod shuttle;
 #[cfg(not(feature = "shuttle"))]
 pub mod tokio;
 
+pub(crate) mod action;
 pub(crate) mod cache;
 pub(crate) mod middleware;
+
+pub(self) const JOIN_DEADLINE: i64 = 15;
 
 #[derive(Clone, Debug)]
 pub struct UserSession {
@@ -19,8 +21,8 @@ pub struct UserSession {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TournamentInfo {
     pub id: String,
-    pub started_at: DateTime<Local>,
-    pub ended_at: DateTime<Local>,
+    pub started_at: Option<DateTime<Local>>,
+    pub ended_at: Option<DateTime<Local>>,
     pub text: Vec<char>,
     pub total_joined: i32,
     pub total_remaining: i32,
@@ -32,8 +34,8 @@ pub struct TypingSession {
     pub client_id: String,
     pub user_id: Option<String>,
     pub tournament_id: String,
-    pub started_at: DateTime<Local>, // Specific to the session
-    pub ended_at: DateTime<Local>,   // Specific to the session
+    pub started_at: Option<DateTime<Utc>>, // Specific to the session
+    pub ended_at: Option<DateTime<Utc>>,   // Specific to the session
     pub current_position: usize,
     pub correct_position: usize,
     pub total_keystrokes: i32,
@@ -47,8 +49,8 @@ impl TypingSession {
             client_id,
             user_id,
             tournament_id,
-            started_at: Local::now(),
-            ended_at: Local::now(),
+            started_at: Some(Utc::now()),
+            ended_at: None,
             current_position: 0,
             correct_position: 0,
             total_keystrokes: 0,
@@ -77,8 +79,8 @@ impl TypingSession {
 pub struct TypingSessionSchema {
     pub user_id: String,
     pub tournament_id: String,
-    pub started_at: DateTime<Local>,
-    pub ended_at: DateTime<Local>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
     pub current_position: usize,
     pub correct_position: usize,
     pub total_keystrokes: i32,

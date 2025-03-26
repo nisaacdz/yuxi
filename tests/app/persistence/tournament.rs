@@ -1,4 +1,3 @@
-use sea_orm::prelude::DateTime;
 use sea_orm::{DatabaseConnection, Unchanged};
 
 use app::persistence::tournaments::create_tournament;
@@ -16,9 +15,7 @@ pub(super) async fn test_tournament(db: &DatabaseConnection) {
         .expect("Create tournament failed!");
     let expected = tournaments::ActiveModel {
         title: Unchanged("title".to_owned()),
-        scheduled_for: Unchanged(
-            DateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
-        ),
+        scheduled_for: Unchanged("2021-01-01 00:00:00".parse().unwrap()),
         ..Default::default()
     };
     assert_eq!(tournament, expected);
