@@ -1,11 +1,4 @@
-use crate::{
-    cache::{redis_delete_typing_session, redis_get_typing_session, redis_set_typing_session},
-    TypingSession,
-};
-
 use super::UserSession;
-use app::persistence::tournaments::get_tournament;
-use chrono::{TimeDelta, Utc};
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::Value;
@@ -38,7 +31,25 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(data):
     socket.on(
         "join",
         async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            typing_api::handle_join(tournament_id, user.clone(), socket, conn.clone()).await;
+            typing_api::handle_join(tournament_id, socket, conn.clone()).await;
+        },
+    );
+
+    socket.on(
+        "leave",
+        async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
+            typing_api::handle_leave(tournament_id, socket).await;
+        },
+    );
+
+    socket.on("disconnect", async move |socket: SocketRef| {
+        info!("Socket.IO disconnected: {:?}", socket.id);
+    });
+
+    socket.on(
+        "type",
+        async move |socket: SocketRef, Data::<String>(data)| {
+            typing_api::handle_typing(socket, data.as_bytes()[0] as char).await;
         },
     );
 

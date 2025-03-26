@@ -13,12 +13,32 @@ use sea_orm::DatabaseConnection;
 use socketioxide::extract::SocketRef;
 use tracing::info;
 
-pub async fn handle_join(
-    tournament_id: String,
-    user: UserSession,
-    socket: SocketRef,
+pub async fn try_join_tournament(
     conn: DatabaseConnection,
-) {
+    tournament_id: &String,
+    user: &UserSession,
+) -> Result<(), String> {
+    let tournament = get_tournament(&conn, tournament_id.clone()).await.unwrap();
+    if let Some(tournament) = tournament {
+        if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
+            // Allow joining the tournament
+            let new_session = TypingSession::new(
+                user.client_id.clone(),
+                user.user_id.clone(),
+                tournament.id.clone(),
+            );
+            redis_set_typing_session(&user.client_id, new_session).await;
+            Ok(())
+        } else {
+            Err("Tournament no longer accepting participants".to_string())
+        }
+    } else {
+        Err("Tournament not found".to_string())
+    }
+}
+
+pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: DatabaseConnection) {
+    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
     info!("Received join event: {:?}", tournament_id);
     let user_session = redis_get_typing_session(&user.client_id).await;
     if let Some(session) = user_session {
@@ -26,33 +46,39 @@ pub async fn handle_join(
             socket.emit("join-back", &"Already joined").ok();
         } else {
             // Leave the current session and join the new one if it's valid and still open
-            let tournament = get_tournament(&conn, tournament_id).await.unwrap();
-            if let Some(tournament) = tournament {
-                if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
-                    // Allow joining the tournament
+            match try_join_tournament(conn, &tournament_id, user).await {
+                Ok(_) => {
                     redis_delete_typing_session(&session.tournament_id, &user.client_id).await;
-                    let new_session = TypingSession::new(
-                        user.client_id.clone(),
-                        user.user_id.clone(),
-                        tournament.id.clone(),
-                    );
-                    redis_set_typing_session(&user.client_id, new_session).await;
                     socket.emit("join-back", &"Joined").ok();
-                } else {
-                    socket
-                        .emit("join-back", &"Tournament no longer accepting participants")
-                        .ok();
                 }
-            } else {
-                socket.emit("join-back", &"Tournament not found").ok();
+                Err(e) => {
+                    socket.emit("join-back", &e).ok();
+                }
             }
+            redis_delete_typing_session(&session.tournament_id, &user.client_id).await;
         }
     } else {
-        socket.emit("join-back", &"No session found").ok();
+        // Join the tournament if it's valid and still open
+        match try_join_tournament(conn, &tournament_id, user).await {
+            Ok(_) => {
+                socket.emit("join-back", &"Joined").ok();
+            }
+            Err(e) => {
+                socket.emit("join-back", &e).ok();
+            }
+        }
     }
+
+    socket.join(tournament_id.clone());
+    socket
+        .to(tournament_id)
+        .emit("joined", &user.client_id)
+        .await
+        .ok();
 }
 
-pub async fn handle_leave(tournament_id: String, user: UserSession, socket: SocketRef) {
+pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
+    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
     info!("Received leave event: {:?}", tournament_id);
     let user_session = redis_get_typing_session(&user.client_id).await;
     if let Some(session) = user_session {
@@ -68,23 +94,12 @@ pub async fn handle_leave(tournament_id: String, user: UserSession, socket: Sock
 }
 
 pub async fn handle_typing(
-    user: UserSession,
     socket: SocketRef,
     input_char: char, // The character input from the user
 ) {
-    let mut typing_session = redis_get_typing_session(&user.client_id).await;
-    let tournament = redis_get_tournament(&tournament_id).await;
-    let challenge_text = match tournament {
-        Some(tournament) => tournament.text,
-        None => {
-            socket.emit("typing-error", &"Invalid tournament").ok();
-            return;
-        }
-    };
-    info!("Received typing event for tournament: {:?}", tournament_id);
-
-    // Retrieve the user's typing session
-    let mut typing_session = match redis_get_typing_session(&user.client_id).await {
+    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
+    let typing_session = redis_get_typing_session(&user.client_id).await;
+    let mut typing_session = match typing_session {
         Some(session) => session,
         None => {
             socket
@@ -93,12 +108,18 @@ pub async fn handle_typing(
             return;
         }
     };
+    let tournament = redis_get_tournament(&typing_session.tournament_id).await;
+    let tournament = match tournament {
+        Some(tournament) => tournament,
+        None => {
+            socket.emit("typing-error", &"Invalid tournament").ok();
+            return;
+        }
+    };
 
-    // Ensure the session is for the correct tournament
-    if typing_session.tournament_id != tournament_id {
-        socket.emit("typing-error", &"Invalid tournament").ok();
-        return;
-    }
+    let challenge_text = &tournament.text;
+
+    info!("Received typing event for tournament: {:?}", &tournament.id);
 
     // Initialize start time if not already set
     if typing_session.started_at.is_none() {
@@ -157,7 +178,11 @@ pub async fn handle_typing(
     redis_set_typing_session(&user.client_id, typing_session.clone()).await;
 
     // Emit the updated session to the client
-    socket.emit("typing-update", &typing_session).ok();
+    socket
+        .to(tournament.id)
+        .emit("typing-update", &typing_session)
+        .await
+        .ok();
 
     // If the user has completed the challenge, notify them
     if typing_session.correct_position >= challenge_text.len() {

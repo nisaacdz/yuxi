@@ -68,50 +68,11 @@ pub async fn redis_get_typing_session(client_id: &str) -> Option<TypingSession> 
     value.map(|v| serde_json::from_str(&v).expect("Deserialization failed"))
 }
 
-pub async fn redis_get_or_init_typing_session(
-    client_id: &str,
-    user_id: Option<String>,
-    tournament_id: &str,
-) -> TypingSession {
-    let session = redis_get_typing_session(client_id).await;
-    match session {
-        Some(s) => s,
-        None => {
-            let new_session =
-                TypingSession::new(client_id.to_owned(), user_id, tournament_id.to_owned());
-            redis_set_typing_session(client_id, new_session.clone()).await;
-            new_session
-        }
-    }
-}
-
 pub async fn redis_set_typing_session(client_id: &str, session: TypingSession) {
     let mut conn = get_redis_connection().await;
     let session_json: String = serde_json::to_string(&session).expect("Serialization failed");
     let _: () = conn
         .set(format!("TS-{}", client_id), session_json)
-        .await
-        .expect("Redis query failed");
-}
-
-pub async fn redis_update_typing_session(
-    tournament_id: &str,
-    client_id: &str,
-    update: fn(TypingSession) -> TypingSession,
-) {
-    let mut conn = get_redis_connection().await;
-    let value: Option<String> = conn
-        .get(format!("TS-{}-{}", tournament_id, client_id))
-        .await
-        .expect("Redis query failed");
-    let session: TypingSession = value
-        .map(|v| serde_json::from_str(&v).expect("Deserialization failed"))
-        .expect("Session not found");
-    let updated_session = update(session);
-    let session_json: String =
-        serde_json::to_string(&updated_session).expect("Serialization failed");
-    let _: () = conn
-        .set(format!("TS-{}-{}", tournament_id, client_id), session_json)
         .await
         .expect("Redis query failed");
 }
