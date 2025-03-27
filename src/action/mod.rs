@@ -1,10 +1,12 @@
 use super::UserSession;
+use moderation::Moderate;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::Value;
 use socketioxide::extract::{Data, SocketRef};
 use tracing::info;
 
+mod moderation;
 mod typing_api;
 
 // time left for scheduled tournament after which no one can join in seconds
@@ -54,7 +56,9 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(data):
     socket.on(
         "type",
         async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
-            typing_api::handle_typing(socket, character).await;
+            Moderate(typing_api::handle_typing(socket, character))
+                .with_key(&user.client_id)
+                .await;
         },
     );
 
