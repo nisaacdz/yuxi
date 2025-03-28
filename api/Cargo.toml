@@ -11,7 +11,7 @@ tower = { workspace = true }
 tracing = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
 fake = { workspace = true }
-
+serde_json = { workspace = true }
 tower-http = { version = "0.6.2", features = ["fs", "cors"] }
 tower-cookies = "0.11.0"
 anyhow = "1.0.86"

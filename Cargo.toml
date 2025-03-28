@@ -24,6 +24,7 @@ utoipa = { version = "5.3.1", default-features = false }
 validator = { version = "0.20.0", default-features = false }
 chrono = { version = "0.4.40", features = ["serde"] }
 fake = { version = "4.2.0" }
+bcrypt = { version = "0.17.0" }
 
 [dependencies]
 # Local dependencies
@@ -39,6 +40,7 @@ chrono = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 axum = { workspace = true, features = ["tokio", "http1", "http2"] }
+bcrypt = { workspace = true }
 
 # External dependencies
 tokio = { version = "1.38.0", features = ["full"] }
