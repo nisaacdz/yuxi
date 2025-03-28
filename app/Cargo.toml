@@ -9,3 +9,4 @@ publish = false
 models = { path = "../models" }
 
 sea-orm = { workspace = true }
+fake = { workspace = true }
