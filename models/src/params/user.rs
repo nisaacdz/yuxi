@@ -18,3 +18,10 @@ pub struct LoginUserParams {
     #[validate(length(min = 8))]
     pub password: String,
 }
+
+// update later with more fields
+#[derive(Deserialize, Validate)]
+pub struct UpdateUserParams {
+    #[validate(length(min = 2))]
+    pub username: Option<String>,
+}

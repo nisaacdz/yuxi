@@ -1,21 +1,27 @@
+use anyhow::anyhow;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path, Query, Request, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use sea_orm::TryIntoModel;
 
-use app::error::UserError;
 use app::persistence::users::{create_user, get_user, search_users};
 use app::state::AppState;
-use models::params::user::CreateUserParams;
+use app::{error::UserError, persistence::users::update_user};
 use models::queries::user::UserQuery;
 use models::schemas::user::{UserListSchema, UserSchema};
+use models::{
+    params::user::{CreateUserParams, UpdateUserParams},
+    schemas::user::UserSession,
+};
 
 use crate::error::ApiError;
 use crate::extractor::{Json, Valid};
+
+use super::auth::me_get;
 
 async fn users_post(
     state: State<AppState>,
@@ -52,8 +58,37 @@ async fn users_id_get(
         .ok_or_else(|| UserError::NotFound.into())
 }
 
+#[axum::debug_handler]
+async fn current_user_update(
+    state: State<AppState>,
+    req: Request,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_session = req
+        .extensions()
+        .get::<UserSession>()
+        .ok_or_else(|| anyhow!("Client Session not set"))?;
+
+    let user_id = user_session
+        .user
+        .as_ref()
+        .ok_or_else(|| anyhow!("User not logged in"))?
+        .id;
+
+    let Valid(Json(params)): Valid<Json<UpdateUserParams>> = Valid::from_request(req, &state)
+        .await
+        .map_err(|_| anyhow!("Invalid request body"))?;
+
+    let updated_user = update_user(&state.conn, user_id, params)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok((StatusCode::CREATED, Json(UserSchema::from(updated_user))))
+}
+
 pub fn create_user_router() -> Router<AppState> {
     Router::new()
         .route("/users", post(users_post).get(users_get))
         .route("/users/{id}", get(users_id_get))
+        .route("/users/me", get(me_get))
+        .route("/users/me/update", patch(current_user_update))
 }

@@ -17,7 +17,7 @@ async fn worker(child_num: u32, config: Config, prefork: bool, listener: std::ne
     }
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers(Any)
         .allow_origin(Any);
 
