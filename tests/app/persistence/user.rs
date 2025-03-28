@@ -7,6 +7,8 @@ use models::params::user::CreateUserParams;
 pub(super) async fn test_user(db: &DatabaseConnection) {
     let params = CreateUserParams {
         username: "test".to_string(),
+        password: "".to_string(),
+        email: "".to_string(),
     };
 
     let user = create_user(db, params).await.expect("Create user failed!");

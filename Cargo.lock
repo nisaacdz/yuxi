@@ -1935,6 +1935,7 @@ dependencies = [
 name = "models"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "sea-orm",
  "serde",
  "serde_json",
@@ -4841,6 +4842,7 @@ dependencies = [
  "shuttle-shared-db",
  "socketioxide",
  "tokio",
+ "tower-http",
  "tower-service",
  "tower-sessions",
  "tracing",

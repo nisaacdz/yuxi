@@ -18,3 +18,4 @@ sea-orm = { workspace = true, features = [
   "with-json",
 ] }
 validator = { workspace = true, features = ["derive"] }
+chrono = { workspace = true }

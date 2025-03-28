@@ -29,6 +29,7 @@ chrono = { version = "0.4.40", features = ["serde"] }
 api = { path = "api" }
 app = { path = "app" }
 utils = { path = "utils" }
+models = { path = "models" }
 
 # Workspace dependencies
 serde_json = { workspace = true }
@@ -45,6 +46,7 @@ socketioxide = "0.16.2"
 tower-service = "0.3.3"
 uuid = { version = "1.16.0", features = ["v4"] }
 tower-sessions = "0.14.0"
+lazy_static = "1.5.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 redis = { version = "0.29.2", features = ["tokio-comp"] }
 
@@ -54,7 +56,7 @@ shuttle-runtime = { version = "0.53.0", optional = true }
 shuttle-shared-db = { version = "0.53.0", features = [
     "postgres",
 ], optional = true }
-lazy_static = "1.5.0"
+tower-http = "0.6.2"
 
 [dev-dependencies]
 app = { path = "app" }

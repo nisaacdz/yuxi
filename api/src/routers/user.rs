@@ -54,6 +54,6 @@ async fn users_id_get(
 
 pub fn create_user_router() -> Router<AppState> {
     Router::new()
-        .route("/", post(users_post).get(users_get))
-        .route("/:id", get(users_id_get))
+        .route("/users", post(users_post).get(users_get))
+        .route("/users/{id}", get(users_id_get))
 }

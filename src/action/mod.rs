@@ -1,5 +1,5 @@
-use super::UserSession;
-use moderation::Moderate;
+use models::schemas::user::UserSession;
+use moderation::TypingModerator;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,8 +8,6 @@ use tracing::info;
 
 mod moderation;
 mod typing_api;
-
-// time left for scheduled tournament after which no one can join in seconds
 
 #[derive(Deserialize, Clone, Debug)]
 struct JoinArgs {
@@ -21,44 +19,40 @@ struct TypeArgs {
     character: char,
 }
 
-pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(data): Data<Value>) {
-    // Middleware should have set the user session so we can unwrap safely
+pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data): Data<Value>) {
     let user = socket
         .req_parts()
         .extensions
         .get::<UserSession>()
         .unwrap()
         .clone();
-    // 3 things will all be relatively constant: client_id, user_id, and socket.id
     info!(
         "Socket.IO connected: {:?} {:?} {:?}",
-        user.client_id, user.user_id, socket.id
+        user.client_id,
+        user.user.as_ref().map(|u| u.id),
+        socket.id
     );
 
     socket.on(
-        "join",
+        "join-tournament",
         async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
             typing_api::handle_join(tournament_id, socket, conn.clone()).await;
         },
     );
 
     socket.on(
-        "leave",
-        async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            typing_api::handle_leave(tournament_id, socket).await;
+        "type-character",
+        async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
+            TypingModerator(move |chars| typing_api::handle_typing(socket, chars))
+                .moderate(&user.client_id, character)
+                .await;
         },
     );
 
-    socket.on("disconnect", async move |socket: SocketRef| {
-        info!("Socket.IO disconnected: {:?}", socket.id);
-    });
-
     socket.on(
-        "type",
-        async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
-            Moderate(typing_api::handle_typing(socket, character))
-                .with_key(&user.client_id)
-                .await;
+        "leave-tournament",
+        async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
+            typing_api::handle_leave(tournament_id, socket).await;
         },
     );
 

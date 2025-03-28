@@ -1,4 +1,4 @@
-use crate::{TournamentInfo, TypingSession};
+use models::schemas::{tournament::TournamentInfo, typing::TypingSession};
 use redis::{aio::MultiplexedConnection, AsyncCommands, Client};
 use tokio::sync::OnceCell;
 

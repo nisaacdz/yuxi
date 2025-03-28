@@ -1,11 +1,10 @@
 use axum::http::HeaderMap;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
+use models::schemas::user::UserSession;
 use std::convert::Infallible;
 use std::task::{Context, Poll};
 use tower_service::Service;
 use uuid::Uuid;
-
-use crate::UserSession;
 
 pub async fn auth(mut req: Request, next: Next) -> Result<Response, StatusCode> {
     if req.extensions().get::<UserSession>().is_some() {
@@ -15,10 +14,10 @@ pub async fn auth(mut req: Request, next: Next) -> Result<Response, StatusCode> 
         let headers = req.headers();
         let user_session = UserSession {
             client_id: get_or_set_client_id(headers),
-            user_id: None,
+            user: None,
         };
 
-        req.extensions_mut().insert(user_session).unwrap();
+        req.extensions_mut().insert(user_session);
 
         Ok(next.run(req).await)
     }
@@ -67,7 +66,7 @@ where
             let headers = req.headers();
             let user_session = UserSession {
                 client_id: get_or_set_client_id(headers),
-                user_id: None,
+                user: None,
             };
 
             req.extensions_mut().insert(user_session).unwrap();

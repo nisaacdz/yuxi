@@ -1,5 +1,6 @@
+use chrono::{DateTime, Utc};
 use sea_orm::prelude::DateTimeUtc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::domains::tournaments;
 
@@ -36,6 +37,33 @@ impl From<Vec<tournaments::Model>> for TournamentListSchema {
                 .into_iter()
                 .map(TournamentSchema::from)
                 .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TournamentInfo {
+    pub id: String,
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub text: Vec<char>,
+    pub total_joined: i32,
+    pub total_remaining: i32,
+    pub total_completed: i32,
+    pub automatized: bool,
+}
+
+impl TournamentInfo {
+    pub fn new(id: String, text: Vec<char>) -> Self {
+        Self {
+            id,
+            started_at: None,
+            ended_at: None,
+            text,
+            total_joined: 0,
+            total_remaining: 0,
+            total_completed: 0,
+            automatized: false,
         }
     }
 }
