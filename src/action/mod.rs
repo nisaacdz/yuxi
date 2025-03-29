@@ -1,12 +1,16 @@
+use std::sync::Arc;
+
 use models::schemas::user::UserSession;
-use moderation::TypingModerator;
+use moderation::FrequencyMonitor;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::Value;
 use socketioxide::extract::{Data, SocketRef};
+use timeout::TimeoutMonitor;
 use tracing::info;
 
 mod moderation;
+mod timeout;
 mod typing_api;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -39,15 +43,27 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
             typing_api::handle_join(tournament_id, socket, conn.clone()).await;
         },
     );
+    {
+        let timeout_monitor = Arc::new(TimeoutMonitor::new(async move || {}));
+        let frequency_monitor = Arc::new(FrequencyMonitor::new());
+        socket.on("type-character", {
+            let frequency_monitor = frequency_monitor.clone();
+            let timeout_monitor = timeout_monitor.clone();
+            async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
+                let socket_clone_outer = socket.clone();
 
-    socket.on(
-        "type-character",
-        async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
-            TypingModerator(move |chars| typing_api::handle_typing(socket, chars))
-                .moderate(&user.client_id, character)
-                .await;
-        },
-    );
+                let processor = async move {
+                    let inner_closure = move |chars: Vec<char>| {
+                        let socket_clone_for_call = socket_clone_outer.clone();
+                        typing_api::handle_typing(socket_clone_for_call, chars)
+                    };
+                    frequency_monitor.call(character, inner_closure).await;
+                };
+
+                timeout_monitor.call(processor).await;
+            }
+        });
+    }
 
     socket.on(
         "leave-tournament",
