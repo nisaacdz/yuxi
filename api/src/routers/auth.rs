@@ -104,8 +104,7 @@ pub async fn me_get(state: State<AppState>, req: Request) -> Result<impl IntoRes
     } else {
         None
     };
-    user.map(|user| Json(UserSchema::from(user)))
-        .ok_or_else(|| UserError::NotFound.into())
+    Ok(Json(user.map(|user| UserSchema::from(user))))
 }
 
 pub fn create_auth_router() -> Router<AppState> {

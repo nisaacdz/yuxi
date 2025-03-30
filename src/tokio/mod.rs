@@ -2,9 +2,9 @@ use super::middleware::auth;
 use crate::{action::on_connect, cache::initialize_redis};
 use api::{setup_config, setup_db, setup_router};
 use app::config::Config;
-use axum::http::Method;
+use axum::http::{header, HeaderName, HeaderValue, Method};
 use socketioxide::SocketIo;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use utils::{create_dev_db, migrate};
 
 async fn worker(child_num: u32, config: Config, prefork: bool, listener: std::net::TcpListener) {
@@ -17,9 +17,26 @@ async fn worker(child_num: u32, config: Config, prefork: bool, listener: std::ne
     }
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
-        .allow_headers(Any)
-        .allow_origin(Any);
+        .allow_methods([
+            Method::OPTIONS,
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([
+            header::ACCEPT,
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            HeaderName::from_static("x-client"),
+        ])
+        .allow_origin(
+            config
+                .allowed_origin
+                .parse::<HeaderValue>()
+                .expect("Failed to parse allowed origin"),
+        )
+        .allow_credentials(true);
 
     let (socket_layer, io) = SocketIo::new_layer();
 
