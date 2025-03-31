@@ -8,12 +8,9 @@ use axum::{
 };
 
 use app::persistence::users::get_user;
+use app::persistence::users::{create_user, login_user};
 use app::state::AppState;
-use app::{
-    error::UserError,
-    persistence::users::{create_user, login_user},
-};
-use models::schemas::user::UserSession;
+use models::schemas::user::ClientSchema;
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
@@ -34,7 +31,7 @@ pub async fn login_post(
     // Extract and clone the existing session
     let user_session = parts
         .extensions
-        .get_mut::<UserSession>()
+        .get_mut::<ClientSchema>()
         .ok_or_else(|| anyhow!("Client Session not set"))?;
 
     // Extract and parse the body
@@ -62,7 +59,7 @@ pub async fn register_post(
     // Extract and clone the existing session
     let user_session = parts
         .extensions
-        .get_mut::<UserSession>()
+        .get_mut::<ClientSchema>()
         .ok_or_else(|| anyhow!("Client Session not set"))?;
 
     // Extract and parse the body
@@ -89,22 +86,32 @@ pub async fn register_post(
 pub async fn logout_post(mut req: Request) -> Result<impl IntoResponse, ApiError> {
     let _user_schema = req
         .extensions_mut()
-        .get_mut::<UserSession>()
+        .get_mut::<ClientSchema>()
         .map(|s| s.user.take())
         .flatten();
     Ok(StatusCode::OK)
 }
 
 #[axum::debug_handler]
-pub async fn me_get(state: State<AppState>, req: Request) -> Result<impl IntoResponse, ApiError> {
-    let user = if let Some(user) = &req.extensions().get::<UserSession>().unwrap().user {
+pub async fn me_get(
+    state: State<AppState>,
+    mut req: Request,
+) -> Result<impl IntoResponse, ApiError> {
+    let client = req
+        .extensions_mut()
+        .get_mut::<ClientSchema>()
+        .ok_or(anyhow!("client session not set"))?;
+
+    let user_model = if let Some(user) = &client.user {
         get_user(&state.conn, user.id)
             .await
             .map_err(ApiError::from)?
     } else {
         None
     };
-    Ok(Json(user.map(|user| UserSchema::from(user))))
+    client.update(user_model);
+
+    Ok(Json(client.clone()))
 }
 
 pub fn create_auth_router() -> Router<AppState> {

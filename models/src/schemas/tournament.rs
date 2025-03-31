@@ -44,6 +44,7 @@ impl From<Vec<tournaments::Model>> for TournamentListSchema {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TournamentInfo {
     pub id: String,
+    pub scheduled_for: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub text: Vec<char>,
@@ -54,9 +55,10 @@ pub struct TournamentInfo {
 }
 
 impl TournamentInfo {
-    pub fn new(id: String, text: Vec<char>) -> Self {
+    pub fn new(id: String, scheduled_for: DateTime<Utc>, text: Vec<char>) -> Self {
         Self {
             id,
+            scheduled_for,
             started_at: None,
             ended_at: None,
             text,

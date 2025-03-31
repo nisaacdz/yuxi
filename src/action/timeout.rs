@@ -6,10 +6,10 @@ use std::{
 
 use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
 
-const CLEANUP_WAIT_DURATION: u64 = 60 * 30; // millis
+const CLEANUP_WAIT_DURATION: u64 = 30;
 
 struct Inner<C> {
-    last_call: Option<Instant>,
+    last_executed: Option<Instant>,
     cleanup: C,
     cleanup_handle: Option<JoinHandle<()>>,
 }
@@ -18,11 +18,15 @@ pub struct TimeoutMonitor<C> {
     inner: Arc<Mutex<Inner<C>>>,
 }
 
-impl<Fut: Future<Output = ()> + Send + Sync + 'static, C: Fn() -> Fut> TimeoutMonitor<C> {
+impl<Fut, C> TimeoutMonitor<C>
+where
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+    C: Fn() -> Fut + Send + Sync + 'static,
+{
     pub fn new(cleanup: C) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
-                last_call: None,
+                last_executed: None,
                 cleanup,
                 cleanup_handle: None,
             })),
@@ -34,12 +38,20 @@ impl<Fut: Future<Output = ()> + Send + Sync + 'static, C: Fn() -> Fut> TimeoutMo
         if let Some(cleanup_handle) = inner_lock.cleanup_handle.take() {
             cleanup_handle.abort();
         }
-        inner_lock.last_call = Some(Instant::now());
-        tokio::spawn(fut);
-        let clean_up_fut = (inner_lock.cleanup)(); // thank god rust guarantees it won't do anything unless awaited
-        inner_lock.cleanup_handle = Some(tokio::spawn(async {
-            sleep(Duration::from_secs(CLEANUP_WAIT_DURATION)).await;
-            clean_up_fut.await;
-        }));
+        std::mem::drop(inner_lock);
+        let inner = self.inner.clone();
+        tokio::spawn(async move {
+            fut.await;
+            let inner_clone = inner.clone();
+            let mut lock_again = inner.lock().await;
+            lock_again.last_executed = Some(Instant::now());
+            lock_again.cleanup_handle = Some(tokio::spawn(async move {
+                sleep(Duration::from_secs(CLEANUP_WAIT_DURATION)).await;
+                let mut lock_again = inner_clone.lock().await;
+                (lock_again.cleanup)().await;
+                lock_again.last_executed = None;
+                std::mem::drop(lock_again);
+            }));
+        });
     }
 }

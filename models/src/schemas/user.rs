@@ -1,8 +1,22 @@
-use serde::Serialize;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::domains::users;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ClientSchema {
+    pub client_id: String,
+    pub user: Option<UserSchema>,
+    pub updated: DateTime<Utc>,
+}
+
+impl ClientSchema {
+    pub fn update(&mut self, user_model: Option<users::Model>) {
+        self.user = user_model.map(UserSchema::from);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserSchema {
     pub id: i32,
     pub username: String,
@@ -29,17 +43,5 @@ impl From<Vec<users::Model>> for UserListSchema {
         Self {
             users: users.into_iter().map(UserSchema::from).collect(),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct UserSession {
-    pub client_id: String,
-    pub user: Option<UserSchema>,
-}
-
-impl UserSession {
-    pub fn id(&self) -> &str {
-        &self.client_id
     }
 }

@@ -15,7 +15,7 @@ use models::queries::user::UserQuery;
 use models::schemas::user::{UserListSchema, UserSchema};
 use models::{
     params::user::{CreateUserParams, UpdateUserParams},
-    schemas::user::UserSession,
+    schemas::user::ClientSchema,
 };
 
 use crate::error::ApiError;
@@ -65,7 +65,7 @@ async fn current_user_update(
 ) -> Result<impl IntoResponse, ApiError> {
     let user_session = req
         .extensions()
-        .get::<UserSession>()
+        .get::<ClientSchema>()
         .ok_or_else(|| anyhow!("Client Session not set"))?;
 
     let user_id = user_session

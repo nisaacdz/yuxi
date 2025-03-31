@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use models::schemas::user::UserSession;
+use models::schemas::user::ClientSchema;
 use moderation::FrequencyMonitor;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
@@ -27,7 +27,7 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
     let user = socket
         .req_parts()
         .extensions
-        .get::<UserSession>()
+        .get::<ClientSchema>()
         .unwrap()
         .clone();
     info!(

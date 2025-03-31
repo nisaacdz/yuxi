@@ -6,13 +6,10 @@ use crate::{
     JOIN_DEADLINE,
 };
 
-use super::UserSession;
+use super::ClientSchema;
 use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
-use models::schemas::{
-    tournament::TournamentInfo,
-    typing::{TypingSession, TypingSessionSchema},
-};
+use models::schemas::{tournament::TournamentInfo, typing::TypingSessionSchema};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use socketioxide::extract::SocketRef;
@@ -46,20 +43,23 @@ impl<T: Serialize> ApiResponse<T> {
 pub async fn try_join_tournament(
     conn: DatabaseConnection,
     tournament_id: &String,
-    user: &UserSession,
+    user: &ClientSchema,
 ) -> Result<(), String> {
     let tournament = get_tournament(&conn, tournament_id.clone()).await.unwrap();
     if let Some(tournament) = tournament {
         if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
             // Allow joining the tournament
-            let new_session = TypingSession::new(user, tournament.id.clone());
+            let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
             let redis_tournament = redis_get_tournament(&tournament.id).await;
             if let None = redis_tournament {
                 let text = get_or_generate_text(&conn, tournament.id.clone())
                     .await
                     .unwrap();
-                let new_redis_tournament =
-                    TournamentInfo::new(tournament.id.clone(), text.chars().collect());
+                let new_redis_tournament = TournamentInfo::new(
+                    tournament.id.clone(),
+                    tournament.scheduled_for,
+                    text.chars().collect(),
+                );
                 redis_set_tournament(&tournament.id, new_redis_tournament).await;
             }
             redis_set_typing_session(&user.client_id, new_session).await;
@@ -73,7 +73,7 @@ pub async fn try_join_tournament(
 }
 
 pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: DatabaseConnection) {
-    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
+    let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received join event: {:?}", tournament_id);
 
     let response: ApiResponse<()> = match redis_get_typing_session(&user.client_id).await {
@@ -99,14 +99,14 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
         socket.join(tournament_id.clone());
         socket
             .to(tournament_id)
-            .emit("user:joined", user.id())
+            .emit("user:joined", user)
             .await
             .ok();
     }
 }
 
 pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
-    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
+    let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received leave event: {:?}", tournament_id);
 
     let response = match redis_get_typing_session(&user.client_id).await {
@@ -121,16 +121,15 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
     socket.emit("leave:response", &response).ok();
 
     if response.success {
-        socket
-            .to(tournament_id)
-            .emit("user:left", user.id())
-            .await
-            .ok();
+        socket.to(tournament_id).emit("user:left", user).await.ok();
     }
 }
 
 pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
-    let user = socket.req_parts().extensions.get::<UserSession>().unwrap();
+    let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
+    let now = Utc::now();
+    info!("Received typing event: {:?}", typed_chars);
+
     let mut typing_session = match redis_get_typing_session(&user.client_id).await {
         Some(session) => session,
         None => {
@@ -156,8 +155,6 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
             return;
         }
     };
-
-    let now = Utc::now();
 
     let challenge_text = &tournament.text;
 

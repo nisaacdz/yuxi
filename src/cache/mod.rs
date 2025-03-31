@@ -1,11 +1,7 @@
 use std::{any::Any, collections::HashMap};
 
-use lazy_static::lazy_static;
-use models::schemas::{tournament::TournamentInfo, typing::TypingSession};
-use redis::{AsyncCommands, Client};
+use models::schemas::{tournament::TournamentInfo, typing::TypingSessionSchema};
 use tokio::sync::{Mutex, MutexGuard};
-
-//static REDIS_CLIENT: OnceCell<Client> = OnceCell::const_new();
 
 type STORAGE = HashMap<String, Box<dyn Any + Send + Sync>>;
 lazy_static::lazy_static! {
@@ -43,17 +39,17 @@ pub async fn redis_delete_tournament(tournament_id: &str) {
     conn.remove(&format!("T-{}", tournament_id));
 }
 
-pub async fn redis_get_typing_session(client_id: &str) -> Option<TypingSession> {
+pub async fn redis_get_typing_session(client_id: &str) -> Option<TypingSessionSchema> {
     let conn = get_redis_connection().await;
     let value = conn.get(&format!("TS-{}", client_id));
-    // cast to TypingSession
+    // cast to TypingSessionSchema
     value
-        .map(|v| v.downcast_ref::<TypingSession>())
+        .map(|v| v.downcast_ref::<TypingSessionSchema>())
         .flatten()
         .map(|v| v.clone())
 }
 
-pub async fn redis_set_typing_session(client_id: &str, session: TypingSession) {
+pub async fn redis_set_typing_session(client_id: &str, session: TypingSessionSchema) {
     let mut conn = get_redis_connection().await;
     conn.insert(format!("TS-{}", client_id), Box::new(session));
 }
