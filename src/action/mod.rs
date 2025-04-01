@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use models::schemas::user::ClientSchema;
 use moderation::FrequencyMonitor;
@@ -44,20 +44,28 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
         },
     );
     {
-        let timeout_monitor = Arc::new(TimeoutMonitor::new(async move || {}));
-        let frequency_monitor = Arc::new(FrequencyMonitor::new());
+        let debounce_duration = Duration::from_millis(100);
+        let max_process_wait = Duration::from_secs(1); // user should only experience at worst 1s lag time
+        let max_process_stack_size = 15; // correct/wrongness info should never be behind by more than 15 chars
+        let cleanup_wait_duration = Duration::from_secs(30);
+        let timeout_monitor =
+            Arc::new(TimeoutMonitor::new(async move || {}, cleanup_wait_duration));
+        let frequency_monitor = Arc::new(FrequencyMonitor::new(
+            debounce_duration,
+            max_process_wait,
+            max_process_stack_size,
+        ));
+
         socket.on("type-character", {
             let frequency_monitor = frequency_monitor.clone();
             let timeout_monitor = timeout_monitor.clone();
             async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
-                let socket_clone_outer = socket.clone();
-
                 let processor = async move {
-                    let inner_closure = move |chars: Vec<char>| {
-                        let socket_clone_for_call = socket_clone_outer.clone();
-                        typing_api::handle_typing(socket_clone_for_call, chars)
-                    };
-                    frequency_monitor.call(character, inner_closure).await;
+                    frequency_monitor
+                        .call(character, move |chars: Vec<char>| {
+                            typing_api::handle_typing(socket, chars)
+                        })
+                        .await;
                 };
 
                 timeout_monitor.call(processor).await;
