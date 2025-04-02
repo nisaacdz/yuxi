@@ -16,7 +16,6 @@ pub async fn get_cache_connection() -> MutexGuard<'static, STORAGE> {
 pub async fn cache_get_tournament(tournament_id: &str) -> Option<TournamentInfo> {
     let conn = get_cache_connection().await;
     let value = conn.get(&format!("T-{}", tournament_id));
-    // cast to TournamentInfo
     value
         .map(|v| v.downcast_ref::<TournamentInfo>())
         .flatten()
@@ -36,18 +35,15 @@ pub async fn cache_update_tournament(
     if let Some(tournament) = conn.get_mut(&format!("T-{}", tournament_id)) {
         let tournament = tournament.downcast_mut::<TournamentInfo>().unwrap();
         update(tournament);
+        if tournament.join_count == 0 {
+            conn.remove(&format!("T-{}", tournament_id));
+        }
     }
-}
-
-pub async fn cache_delete_tournament(tournament_id: &str) {
-    let mut conn = get_cache_connection().await;
-    conn.remove(&format!("T-{}", tournament_id));
 }
 
 pub async fn cache_get_typing_session(client_id: &str) -> Option<TypingSessionSchema> {
     let conn = get_cache_connection().await;
     let value = conn.get(&format!("TS-{}", client_id));
-    // cast to TypingSessionSchema
     value
         .map(|v| v.downcast_ref::<TypingSessionSchema>())
         .flatten()
