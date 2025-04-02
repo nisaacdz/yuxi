@@ -1,0 +1,61 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TYPE privacy_enum AS ENUM ('open', 'invitational');
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    passhash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE texts (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    options JSONB
+);
+
+CREATE TABLE tournaments (
+    id VARCHAR(16) PRIMARY KEY DEFAULT REPLACE(REPLACE(encode(gen_random_bytes(12), 'base64'), '+', '-'), '/', '_'),
+    title VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scheduled_for TIMESTAMPTZ NOT NULL,
+    started_at TIMESTAMPTZ,
+    privacy privacy_enum NOT NULL DEFAULT 'open',
+    text_options JSONB,
+    text_id INTEGER REFERENCES texts(id) ON DELETE SET NULL,
+    joined INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE completed_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tournament_id VARCHAR(16) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    text_id INTEGER NOT NULL REFERENCES texts(id) ON DELETE RESTRICT,
+    accuracy NUMERIC(5,2),
+    speed NUMERIC(5,2),
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE tournaments ADD CONSTRAINT valid_schedule CHECK (scheduled_for >= created_at);
+ALTER TABLE completed_sessions ADD CONSTRAINT valid_accuracy CHECK (accuracy BETWEEN 0 AND 100);
+ALTER TABLE completed_sessions ADD CONSTRAINT valid_speed CHECK (speed >= 0);
+
+CREATE OR REPLACE FUNCTION update_user_modified()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER user_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_user_modified();
+
+CREATE INDEX idx_tournaments_created_by ON tournaments(created_by);
+CREATE INDEX idx_tournaments_text_id ON tournaments(text_id);
+CREATE INDEX idx_completed_sessions_user_id ON completed_sessions(user_id);
+CREATE INDEX idx_completed_sessions_tournament_id ON completed_sessions(tournament_id);
+CREATE INDEX idx_completed_sessions_text_id ON completed_sessions(text_id);

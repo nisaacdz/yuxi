@@ -1,7 +1,7 @@
 use sea_orm::prelude::{DateTimeUtc, Decimal};
 use serde::Serialize;
 
-use crate::domains::sessions;
+use crate::domains::completed_sessions;
 
 #[derive(Serialize)]
 pub struct CompletedSessionSchema {
@@ -11,11 +11,11 @@ pub struct CompletedSessionSchema {
     pub text_id: i32,
     pub accuracy: Option<Decimal>,
     pub speed: Option<Decimal>,
-    pub created_at: Option<DateTimeUtc>,
+    pub completed_at: DateTimeUtc,
 }
 
-impl From<sessions::Model> for CompletedSessionSchema {
-    fn from(session: sessions::Model) -> Self {
+impl From<completed_sessions::Model> for CompletedSessionSchema {
+    fn from(session: completed_sessions::Model) -> Self {
         Self {
             id: session.id,
             user_id: session.user_id,
@@ -23,20 +23,20 @@ impl From<sessions::Model> for CompletedSessionSchema {
             text_id: session.text_id,
             accuracy: session.accuracy,
             speed: session.speed,
-            created_at: session.created_at,
+            completed_at: session.completed_at.to_utc(),
         }
     }
 }
 
 #[derive(Serialize)]
 pub struct CompletedSessionListSchema {
-    pub sessions: Vec<CompletedSessionSchema>,
+    pub completed_sessions: Vec<CompletedSessionSchema>,
 }
 
-impl From<Vec<sessions::Model>> for CompletedSessionListSchema {
-    fn from(sessions: Vec<sessions::Model>) -> Self {
+impl From<Vec<completed_sessions::Model>> for CompletedSessionListSchema {
+    fn from(completed_sessions: Vec<completed_sessions::Model>) -> Self {
         Self {
-            sessions: sessions
+            completed_sessions: completed_sessions
                 .into_iter()
                 .map(CompletedSessionSchema::from)
                 .collect(),

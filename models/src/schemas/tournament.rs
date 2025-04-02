@@ -11,6 +11,7 @@ pub struct TournamentSchema {
     pub created_at: DateTimeUtc,
     pub created_by: i32,
     pub scheduled_for: DateTimeUtc,
+    pub current: i32,
 }
 
 impl From<tournaments::Model> for TournamentSchema {
@@ -21,6 +22,7 @@ impl From<tournaments::Model> for TournamentSchema {
             created_at: tournament.created_at,
             created_by: tournament.created_by,
             scheduled_for: tournament.scheduled_for,
+            current: tournament.current,
         }
     }
 }
@@ -42,18 +44,17 @@ impl From<Vec<tournaments::Model>> for TournamentListSchema {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TournamentInfo {
+pub struct TournamentSession {
     pub id: String,
     pub scheduled_for: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub text: Vec<char>,
-    pub join_count: i32,
-    pub total_completed: i32,
-    pub automatized: bool,
+    pub joined: i32,
+    pub current: i32,
 }
 
-impl TournamentInfo {
+impl TournamentSession {
     pub fn new(id: String, scheduled_for: DateTime<Utc>, text: Vec<char>) -> Self {
         Self {
             id,
@@ -61,9 +62,8 @@ impl TournamentInfo {
             started_at: None,
             ended_at: None,
             text,
-            join_count: 0,
-            total_completed: 0,
-            automatized: false,
+            joined: 0,
+            current: 0,
         }
     }
 }

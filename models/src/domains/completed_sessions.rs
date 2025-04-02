@@ -3,7 +3,7 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(schema_name = "public", table_name = "sessions")]
+#[sea_orm(table_name = "completed_sessions")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
@@ -14,7 +14,7 @@ pub struct Model {
     pub accuracy: Option<Decimal>,
     #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
     pub speed: Option<Decimal>,
-    pub created_at: Option<DateTimeUtc>,
+    pub completed_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -24,7 +24,7 @@ pub enum Relation {
         from = "Column::TextId",
         to = "super::texts::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Restrict"
     )]
     Texts,
     #[sea_orm(
@@ -32,7 +32,7 @@ pub enum Relation {
         from = "Column::TournamentId",
         to = "super::tournaments::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     Tournaments,
     #[sea_orm(
@@ -40,7 +40,7 @@ pub enum Relation {
         from = "Column::UserId",
         to = "super::users::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     Users,
 }

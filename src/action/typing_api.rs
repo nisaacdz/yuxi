@@ -9,7 +9,7 @@ use crate::{
 use super::ClientSchema;
 use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
-use models::schemas::{tournament::TournamentInfo, typing::TypingSessionSchema};
+use models::schemas::{tournament::TournamentSession, typing::TypingSessionSchema};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use socketioxide::extract::SocketRef;
@@ -55,7 +55,7 @@ pub async fn try_join_tournament(
                 let text = get_or_generate_text(&conn, tournament.id.clone())
                     .await
                     .unwrap();
-                let new_cached_tournament = TournamentInfo::new(
+                let new_cached_tournament = TournamentSession::new(
                     tournament.id.clone(),
                     tournament.scheduled_for,
                     text.chars().collect(),
@@ -112,7 +112,7 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
     let response = match cache_get_typing_session(&user.client_id).await {
         Some(session) if session.tournament_id == tournament_id => {
             cache_delete_typing_session(&tournament_id, &user.client_id).await;
-            cache_update_tournament(&tournament_id, |t| t.join_count -= 1).await;
+            cache_update_tournament(&tournament_id, |t| t.current -= 1).await;
             ApiResponse::success("Left tournament", None::<()>)
         }
         Some(_) => ApiResponse::error("Not in this tournament"),

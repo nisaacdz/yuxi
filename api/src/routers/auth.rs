@@ -73,8 +73,7 @@ pub async fn register_post(
     let user = create_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?
-        .try_into_model()
-        .unwrap();
+        .try_into_model()?;
 
     // Update the session
     user_session.user = Some(UserSchema::from(user));

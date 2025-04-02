@@ -2,7 +2,8 @@
 
 pub mod prelude;
 
-pub mod sessions;
+pub mod completed_sessions;
+pub mod sea_orm_active_enums;
 pub mod texts;
 pub mod tournaments;
 pub mod users;
