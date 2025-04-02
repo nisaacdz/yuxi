@@ -48,8 +48,7 @@ pub struct TournamentInfo {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub text: Vec<char>,
-    pub total_joined: i32,
-    pub total_remaining: i32,
+    pub join_count: i32,
     pub total_completed: i32,
     pub automatized: bool,
 }
@@ -62,8 +61,7 @@ impl TournamentInfo {
             started_at: None,
             ended_at: None,
             text,
-            total_joined: 0,
-            total_remaining: 0,
+            join_count: 0,
             total_completed: 0,
             automatized: false,
         }

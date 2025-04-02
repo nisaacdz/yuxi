@@ -1,10 +1,10 @@
 use anyhow::anyhow;
 use axum::{
+    Router,
     extract::{Request, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
 
 use app::persistence::users::get_user;

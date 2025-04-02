@@ -1,4 +1,4 @@
-use axum::{extract::State, routing::get, Router};
+use axum::{Router, extract::State, routing::get};
 use sea_orm::{ConnectionTrait, Statement};
 
 use app::state::AppState;

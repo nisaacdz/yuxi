@@ -24,16 +24,11 @@ struct TypeArgs {
 }
 
 pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data): Data<Value>) {
-    let user = socket
-        .req_parts()
-        .extensions
-        .get::<ClientSchema>()
-        .unwrap()
-        .clone();
+    let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!(
         "Socket.IO connected: {:?} {:?} {:?}",
-        user.client_id,
-        user.user.as_ref().map(|u| u.id),
+        client.client_id,
+        client.user.as_ref().map(|u| u.id),
         socket.id
     );
 
@@ -46,10 +41,20 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
     {
         let debounce_duration = Duration::from_millis(100);
         let max_process_wait = Duration::from_secs(1); // user should only experience at worst 1s lag time
-        let max_process_stack_size = 15; // correct/wrongness info should never be behind by more than 15 chars
+        let max_process_stack_size = 15; // correctness/wrongness info should never be behind by more than 15 chars
         let cleanup_wait_duration = Duration::from_secs(30);
-        let timeout_monitor =
-            Arc::new(TimeoutMonitor::new(async move || {}, cleanup_wait_duration));
+        let client = client.clone();
+        let timeout_monitor = {
+            let socket = socket.clone();
+            Arc::new(TimeoutMonitor::new(
+                async move || {
+                    typing_api::handle_timeout(&client, socket).await;
+                },
+                async move || {},
+                cleanup_wait_duration,
+            ))
+        };
+
         let frequency_monitor = Arc::new(FrequencyMonitor::new(
             debounce_duration,
             max_process_wait,

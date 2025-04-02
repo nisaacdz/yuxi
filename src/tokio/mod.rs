@@ -1,8 +1,8 @@
 use super::middleware::auth;
-use crate::{action::on_connect, cache::initialize_redis};
+use crate::{action::on_connect, cache::initialize_cache};
 use api::{setup_config, setup_db, setup_router};
 use app::config::Config;
-use axum::http::{header, HeaderName, HeaderValue, Method};
+use axum::http::{HeaderName, HeaderValue, Method, header};
 use socketioxide::SocketIo;
 use tower_http::cors::CorsLayer;
 use utils::{create_dev_db, migrate};
@@ -66,7 +66,7 @@ fn run_non_prefork(config: Config, listener: std::net::TcpListener) {
 
 pub fn run() {
     let config = setup_config();
-    initialize_redis(&config.redis_url);
+    initialize_cache(&config.redis_url);
     let listener = std::net::TcpListener::bind(config.get_server_url()).expect("bind to port");
     listener.set_nonblocking(true).expect("non blocking failed");
     tracing::debug!("listening on http://{}", listener.local_addr().unwrap());

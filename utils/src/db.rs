@@ -1,4 +1,4 @@
-use migration::{sea_orm::DatabaseConnection, DbErr, Migrator, MigratorTrait, SchemaManager};
+use migration::{DbErr, Migrator, MigratorTrait, SchemaManager, sea_orm::DatabaseConnection};
 
 pub async fn migrate(conn: &DatabaseConnection) -> Result<(), DbErr> {
     let schema_manager = SchemaManager::new(conn);

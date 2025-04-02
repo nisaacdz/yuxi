@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
 use sea_orm::TryIntoModel;
 

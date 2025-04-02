@@ -256,7 +256,7 @@ where
         processor_for_this_task(chars_to_process).await; // F is consumed here
 
         let finish_time = Instant::now(); // Record finish time immediately after await completes.
-                                          // println!("Task: Processor execution finished.");
+        // println!("Task: Processor execution finished.");
 
         // --- Phase 4: Post-Processing & Scheduling Next Cycle ---
         // Re-acquire the lock to update state.
@@ -265,7 +265,9 @@ where
 
         // Defensive check: Ensure state is still Processing (it should be).
         if !matches!(inner_lock.state, State::Processing) {
-            eprintln!("Warning: State was not 'Processing' after processor finished execution. Proceeding based on current state.");
+            eprintln!(
+                "Warning: State was not 'Processing' after processor finished execution. Proceeding based on current state."
+            );
         }
 
         // Update last execution finish time.
@@ -309,7 +311,7 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     // Counter for processor calls
     static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);

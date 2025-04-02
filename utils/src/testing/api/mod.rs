@@ -1,4 +1,4 @@
-use axum::{body::Body, http::Request, response::Response, Router};
+use axum::{Router, body::Body, http::Request, response::Response};
 use tower::ServiceExt;
 
 pub async fn make_get_request(app: Router, url: &str) -> Response {

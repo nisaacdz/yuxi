@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use sea_orm::DbErr;
 

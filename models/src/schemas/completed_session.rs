@@ -10,7 +10,7 @@ pub struct CompletedSessionSchema {
     pub tournament_id: String,
     pub text_id: i32,
     pub accuracy: Option<Decimal>,
-    pub wpm: Option<Decimal>,
+    pub speed: Option<Decimal>,
     pub created_at: Option<DateTimeUtc>,
 }
 
@@ -22,7 +22,7 @@ impl From<sessions::Model> for CompletedSessionSchema {
             tournament_id: session.tournament_id,
             text_id: session.text_id,
             accuracy: session.accuracy,
-            wpm: session.wpm,
+            speed: session.speed,
             created_at: session.created_at,
         }
     }

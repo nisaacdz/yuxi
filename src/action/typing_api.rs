@@ -1,9 +1,9 @@
 use crate::{
-    cache::{
-        redis_delete_typing_session, redis_get_tournament, redis_get_typing_session,
-        redis_set_tournament, redis_set_typing_session,
-    },
     JOIN_DEADLINE,
+    cache::{
+        cache_delete_typing_session, cache_get_tournament, cache_get_typing_session,
+        cache_set_tournament, cache_set_typing_session, cache_update_tournament,
+    },
 };
 
 use super::ClientSchema;
@@ -50,19 +50,19 @@ pub async fn try_join_tournament(
         if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
             // Allow joining the tournament
             let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
-            let redis_tournament = redis_get_tournament(&tournament.id).await;
-            if let None = redis_tournament {
+            let cache_tournament = cache_get_tournament(&tournament.id).await;
+            if let None = cache_tournament {
                 let text = get_or_generate_text(&conn, tournament.id.clone())
                     .await
                     .unwrap();
-                let new_redis_tournament = TournamentInfo::new(
+                let new_cached_tournament = TournamentInfo::new(
                     tournament.id.clone(),
                     tournament.scheduled_for,
                     text.chars().collect(),
                 );
-                redis_set_tournament(&tournament.id, new_redis_tournament).await;
+                cache_set_tournament(&tournament.id, new_cached_tournament).await;
             }
-            redis_set_typing_session(&user.client_id, new_session).await;
+            cache_set_typing_session(&user.client_id, new_session).await;
             Ok(())
         } else {
             Err("Tournament no longer accepting participants".to_string())
@@ -76,13 +76,13 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
     let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received join event: {:?}", tournament_id);
 
-    let response: ApiResponse<()> = match redis_get_typing_session(&user.client_id).await {
+    let response: ApiResponse<()> = match cache_get_typing_session(&user.client_id).await {
         Some(session) if session.tournament_id == tournament_id => {
             ApiResponse::error("Already joined this tournament")
         }
         Some(existing_session) => match try_join_tournament(conn, &tournament_id, user).await {
             Ok(_) => {
-                redis_delete_typing_session(&existing_session.tournament_id, &user.client_id).await;
+                cache_delete_typing_session(&existing_session.tournament_id, &user.client_id).await;
                 ApiResponse::success("Switched tournaments", None)
             }
             Err(e) => ApiResponse::error(&e),
@@ -109,9 +109,10 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
     let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received leave event: {:?}", tournament_id);
 
-    let response = match redis_get_typing_session(&user.client_id).await {
+    let response = match cache_get_typing_session(&user.client_id).await {
         Some(session) if session.tournament_id == tournament_id => {
-            redis_delete_typing_session(&tournament_id, &user.client_id).await;
+            cache_delete_typing_session(&tournament_id, &user.client_id).await;
+            cache_update_tournament(&tournament_id, |t| t.join_count -= 1).await;
             ApiResponse::success("Left tournament", None::<()>)
         }
         Some(_) => ApiResponse::error("Not in this tournament"),
@@ -123,6 +124,19 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
     if response.success {
         socket.to(tournament_id).emit("user:left", user).await.ok();
     }
+
+    socket.disconnect().ok();
+}
+
+pub async fn handle_timeout(client: &ClientSchema, socket: SocketRef) {
+    let tournament = if let Some(ts) = cache_get_typing_session(&client.client_id).await {
+        cache_get_tournament(&ts.tournament_id).await
+    } else {
+        None
+    };
+    if let Some(tournament) = tournament {
+        handle_leave(tournament.id, socket).await
+    }
 }
 
 pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
@@ -130,7 +144,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
     let now = Utc::now();
     info!("Received typing event: {:?}", typed_chars);
 
-    let mut typing_session = match redis_get_typing_session(&user.client_id).await {
+    let mut typing_session = match cache_get_typing_session(&user.client_id).await {
         Some(session) => session,
         None => {
             socket
@@ -143,7 +157,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
         }
     };
 
-    let tournament = match redis_get_tournament(&typing_session.tournament_id).await {
+    let tournament = match cache_get_tournament(&typing_session.tournament_id).await {
         Some(tournament) => tournament,
         None => {
             socket
@@ -227,7 +241,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
     };
 
     // Save updated session
-    redis_set_typing_session(&user.client_id, typing_session.clone()).await;
+    cache_set_typing_session(&user.client_id, typing_session.clone()).await;
 
     // Broadcast update
     let response = ApiResponse::success(

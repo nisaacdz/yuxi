@@ -1,10 +1,10 @@
 use anyhow::anyhow;
 use axum::{
+    Router,
     extract::{FromRequest, Path, Query, Request, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post},
-    Router,
 };
 use sea_orm::TryIntoModel;
 

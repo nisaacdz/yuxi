@@ -13,7 +13,7 @@ pub struct Model {
     #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
     pub accuracy: Option<Decimal>,
     #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
-    pub wpm: Option<Decimal>,
+    pub speed: Option<Decimal>,
     pub created_at: Option<DateTimeUtc>,
 }
 
