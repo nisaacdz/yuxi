@@ -17,18 +17,10 @@ pub async fn create_user(
     if existing_user.is_some() {
         return Err(DbErr::Custom("User already exists".to_string()));
     }
-    let username = params.username.clone();
-    let existing_username = users::Entity::find()
-        .filter(users::Column::Username.eq(username))
-        .one(db)
-        .await?;
-    if existing_username.is_some() {
-        return Err(DbErr::Custom("Username already exists".to_string()));
-    }
+
     users::ActiveModel {
         email: Set(params.email),
         passhash: Set(pass_hash),
-        username: Set(params.username),
         ..Default::default()
     }
     .save(db)

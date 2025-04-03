@@ -18,6 +18,7 @@ pub struct Model {
     pub text_options: Option<Json>,
     pub text_id: Option<i32>,
     pub joined: i32,
+    pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -4,7 +4,7 @@ CREATE TYPE tournament_privacy AS ENUM ('open', 'invitational');
 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(255) UNIQUE NOT NULL DEFAULT 'user_' || REPLACE(REPLACE(encode(gen_random_bytes(12), 'base64'), '+', '-'), '/', '_'),
     email VARCHAR(255) UNIQUE NOT NULL,
     passhash VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -27,7 +27,8 @@ CREATE TABLE tournaments (
     privacy tournament_privacy NOT NULL DEFAULT 'open',
     text_options JSONB,
     text_id INTEGER REFERENCES texts(id) ON DELETE SET NULL,
-    joined INTEGER NOT NULL DEFAULT 0
+    joined INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE completed_sessions (
@@ -44,7 +45,7 @@ ALTER TABLE tournaments ADD CONSTRAINT valid_schedule CHECK (scheduled_for >= cr
 ALTER TABLE completed_sessions ADD CONSTRAINT valid_accuracy CHECK (accuracy BETWEEN 0 AND 100);
 ALTER TABLE completed_sessions ADD CONSTRAINT valid_speed CHECK (speed >= 0);
 
-CREATE OR REPLACE FUNCTION update_user_modified()
+CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
@@ -52,8 +53,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER user_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_user_modified();
-
+CREATE TRIGGER user_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER tournament_updated BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX idx_tournaments_created_by ON tournaments(created_by);
 CREATE INDEX idx_tournaments_text_id ON tournaments(text_id);
 CREATE INDEX idx_completed_sessions_user_id ON completed_sessions(user_id);

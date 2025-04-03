@@ -39,11 +39,12 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
         },
     );
     {
+        // wait period before processing a new character
         let debounce_duration = Duration::from_millis(100);
         // user should only experience at worst 3s lag time
         // but will likely be in millis under normal circumstances
         let max_process_wait = Duration::from_secs(1);
-        // correctness/wrongness info should never be behind by more than 15 chars
+        // processing shouldn't lag behind by more than 15 chars from current position
         // but will likely be instantaneous under normal circumstances
         let max_process_stack_size = 15;
         let cleanup_wait_duration = Duration::from_secs(30);
