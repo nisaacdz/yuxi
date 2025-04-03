@@ -13,9 +13,7 @@ impl From<texts::Model> for TextSchema {
         Self {
             id: text.id,
             content: text.content,
-            options: text
-                .options
-                .map(|v| serde_json::from_value(v).unwrap_or_default()),
+            options: text.options.map(TextOptions::from_value),
         }
     }
 }
@@ -40,6 +38,16 @@ pub struct TextOptions {
     numbers: bool,
     symbols: bool,
     meaningful_words: bool,
+}
+
+impl TextOptions {
+    pub fn from_value(value: serde_json::Value) -> Self {
+        serde_json::from_value(value).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap()
+    }
 }
 
 impl Default for TextOptions {

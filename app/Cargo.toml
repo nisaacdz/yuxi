@@ -10,3 +10,4 @@ models = { path = "../models" }
 sea-orm = { workspace = true }
 fake = { workspace = true }
 bcrypt = { workspace = true }
+chrono = { workspace = true }

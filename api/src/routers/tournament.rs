@@ -7,7 +7,7 @@ use axum::{
 };
 use sea_orm::TryIntoModel;
 
-use app::persistence::tournaments::{create_tournament, search_tournaments};
+use app::persistence::tournaments::{create_tournament, search_upcoming_tournaments};
 use app::state::AppState;
 use models::params::tournament::CreateTournamentParams;
 use models::queries::PaginationQuery;
@@ -36,7 +36,7 @@ async fn tournaments_get(
     state: State<AppState>,
     Query(query): Query<PaginationQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = search_tournaments(&state.conn, query)
+    let result = search_upcoming_tournaments(&state.conn, query)
         .await
         .map_err(ApiError::from)?;
     Ok(Json(result))

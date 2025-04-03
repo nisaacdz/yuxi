@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
 
-use super::text::TextOptions;
+use super::{text::TextOptions, user::UserSchema};
 
 #[derive(Serialize)]
 pub struct TournamentSchema {
@@ -29,9 +29,7 @@ impl From<tournaments::Model> for TournamentSchema {
             scheduled_for: tournament.scheduled_for.to_utc(),
             joined: tournament.joined,
             privacy: tournament.privacy,
-            text_options: tournament
-                .text_options
-                .map(|v| serde_json::from_value(v).unwrap_or_default()),
+            text_options: tournament.text_options.map(TextOptions::from_value),
             text_id: tournament.text_id,
         }
     }
@@ -76,4 +74,16 @@ impl TournamentSession {
             current: 0,
         }
     }
+}
+
+#[derive(Serialize)]
+pub struct TournamentUpcomingSchema {
+    pub id: String,
+    pub title: String,
+    pub created_at: DateTimeUtc,
+    pub created_by: UserSchema,
+    pub scheduled_for: DateTimeUtc,
+    pub joined: i32,
+    pub privacy: TournamentPrivacy,
+    pub text_options: Option<TextOptions>,
 }
