@@ -4,12 +4,16 @@ use crate::{
         cache_delete_typing_session, cache_get_tournament, cache_get_typing_session,
         cache_set_tournament, cache_set_typing_session, cache_update_tournament,
     },
+    scheduler::schedule_new_task,
 };
 
 use super::ClientSchema;
 use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
-use models::schemas::{tournament::TournamentSession, typing::TypingSessionSchema};
+use models::schemas::{
+    tournament::{TournamentSchema, TournamentSession},
+    typing::TypingSessionSchema,
+};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use socketioxide::extract::SocketRef;
@@ -50,19 +54,8 @@ pub async fn try_join_tournament(
         if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
             // Allow joining the tournament
             let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
-            let cache_tournament = cache_get_tournament(&tournament.id).await;
-            if let None = cache_tournament {
-                let text = get_or_generate_text(&conn, tournament.id.clone())
-                    .await
-                    .unwrap();
-                let new_cached_tournament = TournamentSession::new(
-                    tournament.id.clone(),
-                    tournament.scheduled_for,
-                    text.chars().collect(),
-                );
-                cache_set_tournament(&tournament.id, new_cached_tournament).await;
-            }
-            cache_set_typing_session(&user.client_id, new_session).await;
+            let _tournament = schedule_tournament(conn, tournament).await?;
+            cache_set_typing_session(new_session).await;
             Ok(())
         } else {
             Err("Tournament no longer accepting participants".to_string())
@@ -172,6 +165,10 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
 
     let challenge_text = &tournament.text;
 
+    if challenge_text.is_empty() {
+        return;
+    }
+
     // Initialize start time if not already set
     if typing_session.started_at.is_none() {
         typing_session.started_at = Some(now);
@@ -241,7 +238,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
     };
 
     // Save updated session
-    cache_set_typing_session(&user.client_id, typing_session.clone()).await;
+    cache_set_typing_session(typing_session.clone()).await;
 
     // Broadcast update
     let response = ApiResponse::success(
@@ -253,4 +250,44 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
         .emit("typing:update", &response)
         .await
         .ok();
+}
+
+pub async fn schedule_tournament(
+    conn: DatabaseConnection,
+    tournament: TournamentSchema,
+) -> Result<TournamentSession, String> {
+    if let Some(cache_tournament) = cache_get_tournament(&tournament.id).await {
+        return Ok(cache_tournament);
+    }
+
+    {
+        let tournament = TournamentSchema::from(tournament.clone());
+        let tournament_id = tournament.id.clone();
+        // // for some reason, the task future is not being accepted as either Send, Sync, or Static (one of these bounds fail)
+        // let conn = conn.clone();
+        // let task = async move {
+        //         let text = get_or_generate_text(&conn, tournament.id.clone())
+        //     .await
+        //     .unwrap();
+        //     ()
+        // };
+        schedule_new_task(tournament_id, async move {}, tournament.scheduled_for)
+            .await
+            .ok();
+    }
+    // normally supposed to be an empty string until just before start of tournament
+    let text = get_or_generate_text(&conn, tournament.id.clone())
+        .await
+        .unwrap()
+        .chars()
+        .collect();
+
+    let new_cached_tournament =
+        TournamentSession::new(tournament.id.clone(), tournament.scheduled_for, text);
+
+    cache_set_tournament(&tournament.id, new_cached_tournament).await;
+
+    cache_get_tournament(&tournament.id)
+        .await
+        .ok_or("An error occurred when scheduling the tournament".into())
 }

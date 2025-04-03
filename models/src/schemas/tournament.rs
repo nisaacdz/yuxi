@@ -6,7 +6,7 @@ use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
 
 use super::{text::TextOptions, user::UserSchema};
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,

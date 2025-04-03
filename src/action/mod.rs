@@ -40,8 +40,12 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
     );
     {
         let debounce_duration = Duration::from_millis(100);
-        let max_process_wait = Duration::from_secs(1); // user should only experience at worst 1s lag time
-        let max_process_stack_size = 15; // correctness/wrongness info should never be behind by more than 15 chars
+        // user should only experience at worst 3s lag time
+        // but will likely be in millis under normal circumstances
+        let max_process_wait = Duration::from_secs(1);
+        // correctness/wrongness info should never be behind by more than 15 chars
+        // but will likely be instantaneous under normal circumstances
+        let max_process_stack_size = 15;
         let cleanup_wait_duration = Duration::from_secs(30);
         let client = client.clone();
         let timeout_monitor = {
