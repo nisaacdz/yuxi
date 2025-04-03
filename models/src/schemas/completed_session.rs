@@ -9,8 +9,8 @@ pub struct CompletedSessionSchema {
     pub user_id: i32,
     pub tournament_id: String,
     pub text_id: i32,
-    pub accuracy: Option<Decimal>,
-    pub speed: Option<Decimal>,
+    pub accuracy: Decimal,
+    pub speed: Decimal,
     pub completed_at: DateTimeUtc,
 }
 

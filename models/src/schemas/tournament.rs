@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 use sea_orm::prelude::DateTimeUtc;
 use serde::{Deserialize, Serialize};
 
-use crate::domains::tournaments;
+use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
+
+use super::text::TextOptions;
 
 #[derive(Serialize)]
 pub struct TournamentSchema {
@@ -11,7 +13,10 @@ pub struct TournamentSchema {
     pub created_at: DateTimeUtc,
     pub created_by: i32,
     pub scheduled_for: DateTimeUtc,
-    pub current: i32,
+    pub joined: i32,
+    pub privacy: TournamentPrivacy,
+    pub text_options: Option<TextOptions>,
+    pub text_id: Option<i32>,
 }
 
 impl From<tournaments::Model> for TournamentSchema {
@@ -19,10 +24,15 @@ impl From<tournaments::Model> for TournamentSchema {
         Self {
             id: tournament.id,
             title: tournament.title,
-            created_at: tournament.created_at,
+            created_at: tournament.created_at.to_utc(),
             created_by: tournament.created_by,
-            scheduled_for: tournament.scheduled_for,
-            current: tournament.current,
+            scheduled_for: tournament.scheduled_for.to_utc(),
+            joined: tournament.joined,
+            privacy: tournament.privacy,
+            text_options: tournament
+                .text_options
+                .map(|v| serde_json::from_value(v).unwrap_or_default()),
+            text_id: tournament.text_id,
         }
     }
 }

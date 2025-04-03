@@ -10,10 +10,10 @@ pub struct Model {
     pub user_id: i32,
     pub tournament_id: String,
     pub text_id: i32,
-    #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
-    pub accuracy: Option<Decimal>,
-    #[sea_orm(column_type = "Decimal(Some((5, 2)))", nullable)]
-    pub speed: Option<Decimal>,
+    #[sea_orm(column_type = "Decimal(Some((5, 2)))")]
+    pub accuracy: Decimal,
+    #[sea_orm(column_type = "Decimal(Some((5, 2)))")]
+    pub speed: Decimal,
     pub completed_at: DateTimeWithTimeZone,
 }
 

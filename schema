@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TYPE privacy_enum AS ENUM ('open', 'invitational');
+CREATE TYPE tournament_privacy AS ENUM ('open', 'invitational');
 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -24,7 +24,7 @@ CREATE TABLE tournaments (
     created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     scheduled_for TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
-    privacy privacy_enum NOT NULL DEFAULT 'open',
+    privacy tournament_privacy NOT NULL DEFAULT 'open',
     text_options JSONB,
     text_id INTEGER REFERENCES texts(id) ON DELETE SET NULL,
     joined INTEGER NOT NULL DEFAULT 0
@@ -35,8 +35,8 @@ CREATE TABLE completed_sessions (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tournament_id VARCHAR(16) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
     text_id INTEGER NOT NULL REFERENCES texts(id) ON DELETE RESTRICT,
-    accuracy NUMERIC(5,2),
-    speed NUMERIC(5,2),
+    accuracy NUMERIC(5,2) NOT NULL,
+    speed NUMERIC(5,2) NOT NULL,
     completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

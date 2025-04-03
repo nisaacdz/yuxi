@@ -40,6 +40,9 @@ pub async fn search_tournaments(
     return Ok(PaginatedData::new(data, page, limit, total));
 }
 
-pub async fn get_tournament(db: &DbConn, id: String) -> Result<Option<tournaments::Model>, DbErr> {
-    tournaments::Entity::find_by_id(id).one(db).await
+pub async fn get_tournament(db: &DbConn, id: String) -> Result<Option<TournamentSchema>, DbErr> {
+    tournaments::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map(|v| v.map(|v| v.into()))
 }
