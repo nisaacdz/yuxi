@@ -13,10 +13,3 @@ fn touch(file_name: &str) {
             .expect("failed to execute touch");
     }
 }
-
-pub fn create_dev_db(db_url: &str) {
-    let prefix = "sqlite://";
-    if let Some(file_name) = db_url.strip_prefix(prefix) {
-        touch(file_name);
-    }
-}

@@ -4,7 +4,7 @@ pub struct Config {
     pub port: u32,
     pub redis_url: String,
     pub allowed_origin: String,
-    pub allowed_origin_header: String,
+    pub session_secret: String,
     pub prefork: bool,
 }
 
@@ -20,8 +20,8 @@ impl Config {
             redis_url: std::env::var("REDIS_URL").expect("REDIS_URL is not set in .env file"),
             allowed_origin: std::env::var("ALLOWED_ORIGIN")
                 .expect("ALLOWED_ORIGIN is not set in .env file"),
-            allowed_origin_header: std::env::var("ALLOWED_ORIGIN_HEADER")
-                .expect("ALLOWED_ORIGIN_HEADER is not set in .env file"),
+            session_secret: std::env::var("SESSION_SECRET")
+                .expect("SESSION_SECRET is not set in .env file"),
             prefork: std::env::var("PREFORK").is_ok_and(|v| v == "1"),
         }
     }

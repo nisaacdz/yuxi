@@ -73,10 +73,6 @@ pub async fn cache_delete_typing_session(tournament_id: &str, client_id: &str) {
     cache_update_tournament(tournament_id, |t| t.current -= 1).await;
 }
 
-pub fn initialize_cache(_cache_url: &String) {
-    // Do nothing, all okay
-}
-
 fn generate_typing_session_cache_id(tournament_id: &str, client_id: &str) -> String {
     format!("{TYPING_SESSION_PREFIX}-{}-{}", tournament_id, client_id)
 }

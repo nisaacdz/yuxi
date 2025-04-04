@@ -12,10 +12,16 @@ tracing = { workspace = true }
 validator = { workspace = true, features = ["derive"] }
 fake = { workspace = true }
 serde_json = { workspace = true }
-tower-http = { version = "0.6.2", features = ["fs", "cors"] }
 tower-cookies = "0.11.0"
 anyhow = "1.0.86"
 dotenvy = "0.15.7"
+chrono = { workspace = true }
+socketioxide = { workspace = true }
+tower-sessions = { workspace = true }
+uuid = { workspace = true }
+tower-http = { workspace = true }
+lazy_static = { workspace = true }
+tokio = { workspace = true }
 
 # db
 sea-orm = { workspace = true }

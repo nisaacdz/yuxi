@@ -1,11 +1,12 @@
 use crate::{
-    JOIN_DEADLINE,
     cache::{
         cache_delete_typing_session, cache_get_tournament, cache_get_typing_session,
         cache_set_tournament, cache_set_typing_session, cache_update_tournament,
     },
     scheduler::schedule_new_task,
 };
+
+const JOIN_DEADLINE_SECONDS: i64 = 15;
 
 use super::ClientSchema;
 use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
@@ -51,7 +52,7 @@ pub async fn try_join_tournament(
 ) -> Result<(), String> {
     let tournament = get_tournament(&conn, tournament_id.clone()).await.unwrap();
     if let Some(tournament) = tournament {
-        if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE) {
+        if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE_SECONDS) {
             // Allow joining the tournament
             let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
             let _tournament = schedule_tournament(conn, tournament).await?;

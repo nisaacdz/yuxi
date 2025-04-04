@@ -1,4 +1,4 @@
-pub struct ApiError(pub(super) anyhow::Error);
+pub struct ApiError(pub(crate) anyhow::Error);
 
 impl<E> From<E> for ApiError
 where
