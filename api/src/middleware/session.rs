@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use chrono::Utc;
 use models::schemas::user::ClientSchema;
 use tower_sessions::Session;
@@ -11,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 
-const CLIENT_SESSION_KEY: &str = "client_session_data_v1";
+pub const CLIENT_SESSION_KEY: &str = "client_session_data_v1";
 
 pub async fn client_session(
     session: Session,
@@ -34,7 +30,8 @@ pub async fn client_session(
                 updated: Utc::now(),
             };
 
-            session.insert(CLIENT_SESSION_KEY, &new_state)
+            session
+                .insert(CLIENT_SESSION_KEY, &new_state)
                 .await
                 .map_err(|e| {
                     tracing::error!("Failed to insert new client session data: {}", e);
@@ -48,7 +45,7 @@ pub async fn client_session(
             Err(anyhow::anyhow!("Failed to load session state").context(e))
         }
     }?;
-    
+
     req.extensions_mut().insert(client_session);
 
     Ok(next.run(req).await)

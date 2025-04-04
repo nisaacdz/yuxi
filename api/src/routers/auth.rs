@@ -1,115 +1,108 @@
-use anyhow::anyhow;
+use app::persistence::users::{create_user, login_user};
+use app::state::AppState;
 use axum::{
-    Router,
-    extract::{Request, State},
+    Extension, Router,
+    extract::State,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
 };
-
-use app::persistence::users::get_user;
-use app::persistence::users::{create_user, login_user};
-use app::state::AppState;
+use chrono::Utc;
 use models::schemas::user::ClientSchema;
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
 };
 use sea_orm::TryIntoModel;
+use tower_sessions::Session;
 
-use crate::error::ApiError;
 use crate::extractor::Json;
+use crate::{error::ApiError, middleware::session::CLIENT_SESSION_KEY};
 
 #[axum::debug_handler]
 pub async fn login_post(
-    state: State<AppState>,
-    req: Request,
+    State(state): State<AppState>,
+    session: Session,
+    Extension(client): Extension<ClientSchema>,
+    Json(params): Json<LoginUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Split the request into parts and body
-    let (mut parts, body) = req.into_parts();
-
-    // Extract and clone the existing session
-    let user_session = parts
-        .extensions
-        .get_mut::<ClientSchema>()
-        .ok_or_else(|| anyhow!("Client Session not set"))?;
-
-    // Extract and parse the body
-    let bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .map_err(ApiError::from)?;
-
-    let params: LoginUserParams = serde_json::from_slice(&bytes).map_err(ApiError::from)?;
-
     let user = login_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?;
-    user_session.user = Some(UserSchema::from(user));
+    let client = ClientSchema {
+        client_id: client.client_id,
+        user: Some(UserSchema::from(user)),
+        updated: Utc::now(),
+    };
+
+    session
+        .insert(CLIENT_SESSION_KEY, &client)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to insert new client session data: {}", e);
+            ApiError(anyhow::anyhow!("Failed to save session state").context(e))
+        })?;
+
     Ok(StatusCode::OK)
 }
 
 #[axum::debug_handler]
 pub async fn register_post(
-    state: State<AppState>,
-    req: Request,
+    State(state): State<AppState>,
+    session: Session,
+    Extension(client): Extension<ClientSchema>,
+    Json(params): Json<CreateUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Split the request into parts and body
-    let (mut parts, body) = req.into_parts();
-
-    // Extract and clone the existing session
-    let user_session = parts
-        .extensions
-        .get_mut::<ClientSchema>()
-        .ok_or_else(|| anyhow!("Client Session not set"))?;
-
-    // Extract and parse the body
-    let bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .map_err(ApiError::from)?;
-
-    let params: CreateUserParams = serde_json::from_slice(&bytes).map_err(ApiError::from)?;
-
-    let user = create_user(&state.conn, params)
+    let user_db = create_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?
         .try_into_model()
         .map_err(ApiError::from)?;
 
-    user_session.user = Some(UserSchema::from(user));
+    let updated_client_state = ClientSchema {
+        client_id: client.client_id,
+        user: Some(UserSchema::from(user_db)),
+        updated: Utc::now(),
+    };
 
-    Ok(StatusCode::OK)
+    session
+        .insert(CLIENT_SESSION_KEY, &updated_client_state)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to insert session data after registration: {}", e);
+            ApiError(anyhow::anyhow!("Failed to save session state").context(e))
+        })?;
+
+    Ok(StatusCode::CREATED)
 }
 
 #[axum::debug_handler]
-pub async fn logout_post(mut req: Request) -> Result<impl IntoResponse, ApiError> {
-    let _user_schema = req
-        .extensions_mut()
-        .get_mut::<ClientSchema>()
-        .map(|s| s.user.take())
-        .flatten();
+pub async fn logout_post(
+    session: Session,
+    Extension(mut client): Extension<ClientSchema>,
+) -> Result<impl IntoResponse, ApiError> {
+    if client.user.is_none() {
+        return Ok(StatusCode::OK);
+    }
+
+    client.user = None;
+    client.updated = Utc::now();
+
+    session
+        .insert(CLIENT_SESSION_KEY, &client)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to insert session data after logout: {}", e);
+            ApiError(anyhow::anyhow!("Failed to save session state").context(e))
+        })?;
     Ok(StatusCode::OK)
 }
 
 #[axum::debug_handler]
 pub async fn me_get(
-    state: State<AppState>,
-    mut req: Request,
+    Extension(client_state): Extension<ClientSchema>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let client = req
-        .extensions_mut()
-        .get_mut::<ClientSchema>()
-        .ok_or(anyhow!("client session not set"))?;
-
-    let user_model = if let Some(user) = &client.user {
-        get_user(&state.conn, user.id)
-            .await
-            .map_err(ApiError::from)?
-    } else {
-        None
-    };
-    client.update(user_model);
-
-    Ok(Json(client.clone()))
+    Ok(Json(client_state))
 }
 
 pub fn create_auth_router() -> Router<AppState> {
