@@ -69,13 +69,12 @@ pub async fn register_post(
 
     let params: CreateUserParams = serde_json::from_slice(&bytes).map_err(ApiError::from)?;
 
-    // Your business logic
     let user = create_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?
-        .try_into_model()?;
+        .try_into_model()
+        .map_err(ApiError::from)?;
 
-    // Update the session
     user_session.user = Some(UserSchema::from(user));
 
     Ok(StatusCode::OK)
