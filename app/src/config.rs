@@ -10,7 +10,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Config {
-        Config {
+        let v = Config {
             db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file"),
             host: std::env::var("HOST").expect("HOST is not set in .env file"),
             port: std::env::var("PORT")
@@ -23,7 +23,8 @@ impl Config {
             session_secret: std::env::var("SESSION_SECRET")
                 .expect("SESSION_SECRET is not set in .env file"),
             prefork: std::env::var("PREFORK").is_ok_and(|v| v == "1"),
-        }
+        };
+        v
     }
 
     pub fn get_server_url(&self) -> String {

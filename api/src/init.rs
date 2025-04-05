@@ -42,7 +42,6 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     let session_layer = SessionManagerLayer::new(session_store)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::seconds(86400 * 7)))
-        .with_secure(true)
         .with_signed(Key::from(config.session_secret.as_bytes()));
 
     let (socket_layer, io) = SocketIo::new_layer();
