@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use axum::{
     Extension, Router,
-    extract::{FromRequest, Path, Query, Request, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post},
@@ -99,8 +99,8 @@ async fn current_user_update(
 
 pub fn create_user_router() -> Router<AppState> {
     Router::new()
-        .route("/users", post(users_post).get(users_get))
-        .route("/users/{id}", get(users_id_get))
-        .route("/users/me", get(me_get))
-        .route("/users/me/update", patch(current_user_update))
+        .route("/", post(users_post).get(users_get))
+        .route("/{id}", get(users_id_get))
+        .route("/me", get(me_get))
+        .route("/me/update", patch(current_user_update))
 }

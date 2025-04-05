@@ -5,6 +5,7 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
+use tower_cookies::Key;
 use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
@@ -39,9 +40,10 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     let session_store = MemoryStore::default();
 
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_http_only(true)
         .with_same_site(tower_sessions::cookie::SameSite::Lax)
-        .with_expiry(Expiry::OnInactivity(Duration::seconds(86400 * 7)));
+        .with_expiry(Expiry::OnInactivity(Duration::seconds(86400 * 7)))
+        .with_secure(true)
+        .with_signed(Key::from(config.session_secret.as_bytes()));
 
     let (socket_layer, io) = SocketIo::new_layer();
 
@@ -51,11 +53,14 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
             on_connect(conn, socket, data).await;
         });
     }
-    create_router(AppState { conn })
-        .layer(cors)
-        .layer(session_layer)
-        .layer(axum::middleware::from_fn(session::client_session))
+
+    let app_state = AppState { conn };
+
+    create_router(app_state)
         .layer(socket_layer)
+        .layer(axum::middleware::from_fn(session::client_session))
+        .layer(session_layer)
+        .layer(cors)
 }
 
 pub fn setup_config() -> Config {

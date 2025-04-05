@@ -1,5 +1,4 @@
-use api::setup_router;
-use app::config::Config;
+use api::{setup_config, setup_router};
 use utils::testing::setup_test_db;
 
 mod blog;
@@ -15,7 +14,7 @@ async fn root_main() {
     let db = setup_test_db("sqlite::root?mode=memory&cache=shared")
         .await
         .expect("Set up db failed!");
-    let config = Config::from_env();
+    let config = setup_config();
     let app = setup_router(config, db);
     test_root(app).await;
 }
@@ -26,7 +25,7 @@ async fn user_main() {
         .await
         .expect("Set up db failed!");
 
-    let config = Config::from_env();
+    let config = setup_config();
     let app = setup_router(config, db);
     test_post_users(app.clone()).await;
     test_post_users_error(app.clone()).await;
@@ -39,7 +38,7 @@ async fn blog_main() {
         .await
         .expect("Set up db failed!");
 
-    let config = Config::from_env();
+    let config = setup_config();
     let app = setup_router(config, db);
     test_post_users(app.clone()).await;
     test_post_blogs(app.clone()).await;

@@ -107,8 +107,8 @@ pub async fn me_get(
 
 pub fn create_auth_router() -> Router<AppState> {
     Router::new()
-        .route("/auth/login", post(login_post))
-        .route("/auth/logout", post(logout_post))
-        .route("/auth/register", post(register_post))
-        .route("/auth/me", get(me_get))
+        .route("/login", post(login_post))
+        .route("/logout", post(logout_post))
+        .route("/register", post(register_post))
+        .route("/me", get(me_get))
 }
