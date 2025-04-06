@@ -30,7 +30,7 @@ pub async fn login_post(
         .await
         .map_err(ApiError::from)?;
     let client = ClientSchema {
-        client_id: client.client_id,
+        id: client.id,
         user: Some(UserSchema::from(user)),
         updated: Utc::now(),
     };
@@ -60,7 +60,7 @@ pub async fn register_post(
         .map_err(ApiError::from)?;
 
     let updated_client_state = ClientSchema {
-        client_id: client.client_id,
+        id: client.id,
         user: Some(UserSchema::from(user_db)),
         updated: Utc::now(),
     };

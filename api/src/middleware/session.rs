@@ -24,7 +24,7 @@ pub async fn client_session(
             tracing::info!("No client session found, creating new one.");
 
             let new_state = ClientSchema {
-                client_id: Uuid::new_v4().to_string(),
+                id: Uuid::new_v4().to_string(),
                 user: None,
                 updated: Utc::now(),
             };

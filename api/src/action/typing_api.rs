@@ -70,13 +70,13 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
     let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received join event: {:?}", tournament_id);
 
-    let response: ApiResponse<()> = match cache_get_typing_session(&user.client_id).await {
+    let response: ApiResponse<()> = match cache_get_typing_session(&user.id).await {
         Some(session) if session.tournament_id == tournament_id => {
             ApiResponse::error("Already joined this tournament")
         }
         Some(existing_session) => match try_join_tournament(conn, &tournament_id, user).await {
             Ok(_) => {
-                cache_delete_typing_session(&existing_session.tournament_id, &user.client_id).await;
+                cache_delete_typing_session(&existing_session.tournament_id, &user.id).await;
                 ApiResponse::success("Switched tournaments", None)
             }
             Err(e) => ApiResponse::error(&e),
@@ -103,9 +103,9 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
     let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received leave event: {:?}", tournament_id);
 
-    let response = match cache_get_typing_session(&user.client_id).await {
+    let response = match cache_get_typing_session(&user.id).await {
         Some(session) if session.tournament_id == tournament_id => {
-            cache_delete_typing_session(&tournament_id, &user.client_id).await;
+            cache_delete_typing_session(&tournament_id, &user.id).await;
             cache_update_tournament(&tournament_id, |t| t.current -= 1).await;
             ApiResponse::success("Left tournament", None::<()>)
         }
@@ -123,7 +123,7 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
 }
 
 pub async fn handle_timeout(client: &ClientSchema, socket: SocketRef) {
-    let tournament = if let Some(ts) = cache_get_typing_session(&client.client_id).await {
+    let tournament = if let Some(ts) = cache_get_typing_session(&client.id).await {
         cache_get_tournament(&ts.tournament_id).await
     } else {
         None
@@ -138,7 +138,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
     let now = Utc::now();
     info!("Received typing event: {:?}", typed_chars);
 
-    let mut typing_session = match cache_get_typing_session(&user.client_id).await {
+    let mut typing_session = match cache_get_typing_session(&user.id).await {
         Some(session) => session,
         None => {
             socket

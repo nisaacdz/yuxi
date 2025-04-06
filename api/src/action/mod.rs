@@ -27,7 +27,7 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
     let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!(
         "Socket.IO connected: {:?} {:?} {:?}",
-        client.client_id,
+        client.id,
         client.user.as_ref().map(|u| u.id),
         socket.id
     );

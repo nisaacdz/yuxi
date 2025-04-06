@@ -55,15 +55,14 @@ pub async fn cache_get_typing_session(client_id: &str) -> Option<TypingSessionSc
     let value = conn
         .values()
         .map(|v| v.downcast_ref::<TypingSessionSchema>())
-        .find(|v| matches!(v, Some(v) if v.client.client_id == client_id))
+        .find(|v| matches!(v, Some(v) if v.client.id == client_id))
         .flatten();
     value.map(|v| v.clone())
 }
 
 pub async fn cache_set_typing_session(session: TypingSessionSchema) {
     let mut conn = get_cache_connection().await;
-    let cache_id =
-        generate_typing_session_cache_id(&session.tournament_id, &session.client.client_id);
+    let cache_id = generate_typing_session_cache_id(&session.tournament_id, &session.client.id);
     conn.insert(cache_id, Box::new(session));
 }
 

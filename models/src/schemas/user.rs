@@ -5,7 +5,7 @@ use crate::domains::users;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ClientSchema {
-    pub client_id: String,
+    pub id: String,
     pub user: Option<UserSchema>,
     pub updated: DateTime<Utc>,
 }

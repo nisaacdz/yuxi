@@ -83,7 +83,7 @@ async fn current_user_update(
         .insert(
             CLIENT_SESSION_KEY,
             &ClientSchema {
-                client_id: client.client_id,
+                id: client.id,
                 user: Some(UserSchema::from(updated_user.clone())),
                 updated: Utc::now(),
             },
