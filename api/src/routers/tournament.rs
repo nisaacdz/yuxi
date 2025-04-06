@@ -1,5 +1,6 @@
+use anyhow::anyhow;
 use axum::{
-    Router,
+    Extension, Router,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
@@ -9,26 +10,32 @@ use sea_orm::TryIntoModel;
 
 use app::persistence::tournaments::{create_tournament, search_upcoming_tournaments};
 use app::state::AppState;
-use models::params::tournament::CreateTournamentParams;
 use models::queries::PaginationQuery;
 use models::schemas::tournament::TournamentSchema;
+use models::{params::tournament::CreateTournamentParams, schemas::user::ClientSchema};
 
 use crate::error::ApiError;
 use crate::extractor::{Json, Valid};
 
 async fn tournaments_post(
     state: State<AppState>,
+    Extension(client): Extension<ClientSchema>,
     Valid(Json(params)): Valid<Json<CreateTournamentParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let tournament = create_tournament(&state.conn, params)
-        .await
-        .map_err(ApiError::from)?;
+    match client.user {
+        Some(user) => {
+            let tournament = create_tournament(&state.conn, params, &user)
+                .await
+                .map_err(ApiError::from)?;
 
-    let tournament = tournament.try_into_model().unwrap();
-    Ok((
-        StatusCode::CREATED,
-        Json(TournamentSchema::from(tournament)),
-    ))
+            let tournament = tournament.try_into_model().unwrap();
+            Ok((
+                StatusCode::CREATED,
+                Json(TournamentSchema::from(tournament)),
+            ))
+        }
+        None => Err(ApiError::from(anyhow!("Unauthorized"))),
+    }
 }
 
 #[axum::debug_handler]

@@ -15,7 +15,6 @@ pub async fn client_session(
     next: Next,
 ) -> Result<Response, ApiError> {
     let loaded_session_result = session.get::<ClientSchema>(CLIENT_SESSION_KEY).await;
-
     let client_session = match loaded_session_result {
         Ok(Some(state)) => {
             tracing::trace!("Loaded existing client session.");

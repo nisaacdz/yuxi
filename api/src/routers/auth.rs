@@ -43,7 +43,7 @@ pub async fn login_post(
             ApiError(anyhow::anyhow!("Failed to save session state").context(e))
         })?;
 
-    Ok(StatusCode::OK)
+    Ok(Json(client.user))
 }
 
 #[axum::debug_handler]
@@ -73,7 +73,7 @@ pub async fn register_post(
             ApiError(anyhow::anyhow!("Failed to save session state").context(e))
         })?;
 
-    Ok(StatusCode::CREATED)
+    Ok(Json(updated_client_state.user))
 }
 
 #[axum::debug_handler]

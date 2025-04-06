@@ -3,6 +3,7 @@ use models::queries::PaginationQuery;
 use models::schemas::pagination::PaginatedData;
 use models::schemas::text::TextOptions;
 use models::schemas::tournament::{TournamentSchema, TournamentUpcomingSchema};
+use models::schemas::user::UserSchema;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
     QuerySelect, Set,
@@ -34,10 +35,12 @@ pub async fn parse_upcoming_tournament(
 pub async fn create_tournament(
     db: &DbConn,
     params: CreateTournamentParams,
+    user: &UserSchema,
 ) -> Result<tournaments::ActiveModel, DbErr> {
     tournaments::ActiveModel {
         title: Set(params.title),
         scheduled_for: Set(params.scheduled_for),
+        created_by: Set(user.id.clone()),
         ..Default::default()
     }
     .save(db)
