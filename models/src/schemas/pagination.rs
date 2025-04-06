@@ -17,8 +17,8 @@ impl<U, T: From<U>> From<Vec<U>> for ListSchema<T> {
 pub struct PaginatedData<T> {
     pub data: Vec<T>,
     pub page: u64,
-    pub limit: u64, // page size
-    pub total: u64, // total items available
+    pub limit: u64,
+    pub total: u64,
 }
 
 impl<T> PaginatedData<T> {

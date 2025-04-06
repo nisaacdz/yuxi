@@ -7,13 +7,13 @@ use super::user::ClientSchema;
 pub struct TypingSessionSchema {
     pub client: ClientSchema,
     pub tournament_id: String,
-    pub started_at: Option<DateTime<Utc>>, // Specific to the session
-    pub ended_at: Option<DateTime<Utc>>,   // Specific to the session
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
     pub current_position: usize,
     pub correct_position: usize,
     pub total_keystrokes: i32,
     pub current_accuracy: f32,
-    pub current_speed: f32, // WPM
+    pub current_speed: f32,
 }
 
 impl TypingSessionSchema {
