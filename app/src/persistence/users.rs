@@ -66,11 +66,16 @@ pub async fn login_user(
     db: &DbConn,
     LoginUserParams { email, password }: LoginUserParams,
 ) -> Result<users::Model, DbErr> {
-    let pass_hash = bcrypt::hash(password, 4).unwrap();
-    users::Entity::find()
+    let user = match users::Entity::find()
         .filter(users::Column::Email.eq(email))
-        .filter(users::Column::Passhash.eq(pass_hash))
         .one(db)
         .await?
-        .ok_or(DbErr::RecordNotFound("User Not found".to_owned()))
+    {
+        None => return Err(DbErr::RecordNotFound("User not found".to_string())),
+        Some(user) => user,
+    };
+    if !bcrypt::verify(password, &user.passhash).unwrap() {
+        return Err(DbErr::Custom("Password incorrect".to_string()));
+    }
+    Ok(user)
 }
