@@ -58,7 +58,6 @@ pub struct TournamentSession {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub text: Option<String>,
-    pub joined: i32,
     pub current: i32,
 }
 
@@ -70,7 +69,6 @@ impl TournamentSession {
             started_at: None,
             ended_at: None,
             text,
-            joined: 0,
             current: 0,
         }
     }

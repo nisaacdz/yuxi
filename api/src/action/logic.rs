@@ -71,6 +71,15 @@ pub async fn try_join_tournament(
             // Cache the user's new typing session
             cache_set_typing_session(new_session).await; // Assuming cache operations don't return critical errors
 
+            let participants = cache_get_tournament_participants(&scheduled_tournament.id).await;
+            let tournament_update =
+                TournamentUpdateSchema::new(scheduled_tournament.clone(), participants);
+
+            socket
+                .to(scheduled_tournament.id.clone())
+                .emit("tournament:update", &tournament_update)
+                .await
+                .ok();
             Ok(scheduled_tournament)
         } else {
             Err("Tournament join deadline has passed.".to_string())
@@ -121,19 +130,16 @@ pub async fn schedule_tournament(
                         t.started_at = Some(Utc::now());
                     })
                     .await;
-                    // TODO: Consider broadcasting a "tournament_ready" event here if needed
-                    let participants =
-                        cache_get_tournament_participants(&tournament_id_for_task).await;
-                    let tournament_2 = match cache_get_tournament(&tournament_id_for_task).await {
-                        Some(v) => v,
-                        None => {
-                            return error!("Tournament session not found");
-                        }
-                    };
-                    let tournament_update = TournamentUpdateSchema::new(tournament_2, participants);
+                    let started_tournament =
+                        match cache_get_tournament(&tournament_id_for_task).await {
+                            Some(v) => v,
+                            None => {
+                                return error!("Tournament session not found");
+                            }
+                        };
                     socket
                         .to(tournament_id_for_task)
-                        .emit("tournament:start", &tournament_update)
+                        .emit("tournament:start", &started_tournament)
                         .await
                         .ok();
                 }
