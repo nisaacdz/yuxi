@@ -9,9 +9,11 @@ use socketioxide::extract::{Data, SocketRef};
 use timeout::TimeoutMonitor;
 use tracing::info;
 
+pub(self) mod handlers;
+pub(self) mod logic;
 mod moderation;
+pub(self) mod state;
 mod timeout;
-mod typing_api;
 
 #[derive(Deserialize, Clone, Debug)]
 struct JoinArgs {
@@ -25,17 +27,12 @@ struct TypeArgs {
 
 pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data): Data<Value>) {
     let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-    info!(
-        "Socket.IO connected: {:?} {:?} {:?}",
-        client.id,
-        client.user.as_ref().map(|u| u.id),
-        socket.id
-    );
+    info!("Socket.IO connected: {:?}", client);
 
     socket.on(
         "join-tournament",
         async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            typing_api::handle_join(tournament_id, socket, conn.clone()).await;
+            handlers::handle_join(tournament_id, socket, conn.clone()).await;
         },
     );
     {
@@ -51,11 +48,14 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
         let client = client.clone();
         let timeout_monitor = {
             let socket = socket.clone();
+
+            let after_timeout_fn = { async move || info!("Timedout user now typing") };
+
             Arc::new(TimeoutMonitor::new(
                 async move || {
-                    typing_api::handle_timeout(&client, socket).await;
+                    handlers::handle_timeout(&client, socket).await;
                 },
-                async move || {},
+                after_timeout_fn,
                 cleanup_wait_duration,
             ))
         };
@@ -73,7 +73,7 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
                 let processor = async move {
                     frequency_monitor
                         .call(character, move |chars: Vec<char>| {
-                            typing_api::handle_typing(socket, chars)
+                            handlers::handle_typing(socket, chars)
                         })
                         .await;
                 };
@@ -86,7 +86,7 @@ pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data)
     socket.on(
         "leave-tournament",
         async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            typing_api::handle_leave(tournament_id, socket).await;
+            handlers::handle_leave(tournament_id, socket).await;
         },
     );
 

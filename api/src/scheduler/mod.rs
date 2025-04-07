@@ -12,7 +12,7 @@ pub async fn schedule_new_task<Fut>(
     scheduled_for: DateTime<Utc>,
 ) -> Result<(), String>
 where
-    Fut: Future<Output = ()> + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
 {
     let mut schedules = SCHEDULES.lock().await;
 

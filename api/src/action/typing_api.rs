@@ -1,7 +1,8 @@
 use crate::{
     cache::{
-        cache_delete_typing_session, cache_get_tournament, cache_get_typing_session,
-        cache_set_tournament, cache_set_typing_session, cache_update_tournament,
+        cache_delete_typing_session, cache_get_tournament, cache_get_tournament_participants,
+        cache_get_typing_session, cache_set_tournament, cache_set_typing_session,
+        cache_update_tournament,
     },
     scheduler::schedule_new_task,
 };
@@ -13,7 +14,7 @@ use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
 use models::schemas::{
     tournament::{TournamentSchema, TournamentSession},
-    typing::TypingSessionSchema,
+    typing::{TournamentUpdateSchema, TypingSessionSchema},
 };
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
@@ -49,15 +50,15 @@ pub async fn try_join_tournament(
     conn: DatabaseConnection,
     tournament_id: &String,
     user: &ClientSchema,
-) -> Result<(), String> {
+) -> Result<TournamentSession, String> {
     let tournament = get_tournament(&conn, tournament_id.clone()).await.unwrap();
     if let Some(tournament) = tournament {
         if tournament.scheduled_for - Utc::now() >= TimeDelta::seconds(JOIN_DEADLINE_SECONDS) {
             // Allow joining the tournament
             let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
-            let _tournament = schedule_tournament(conn, tournament).await?;
+            let new_tournament = schedule_tournament(conn, tournament).await?;
             cache_set_typing_session(new_session).await;
-            Ok(())
+            Ok(new_tournament)
         } else {
             Err("Tournament no longer accepting participants".to_string())
         }
@@ -70,19 +71,19 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
     let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Received join event: {:?}", tournament_id);
 
-    let response: ApiResponse<()> = match cache_get_typing_session(&user.id).await {
+    let response: ApiResponse<TournamentSession> = match cache_get_typing_session(&user.id).await {
         Some(session) if session.tournament_id == tournament_id => {
             ApiResponse::error("Already joined this tournament")
         }
         Some(existing_session) => match try_join_tournament(conn, &tournament_id, user).await {
-            Ok(_) => {
+            Ok(t) => {
                 cache_delete_typing_session(&existing_session.tournament_id, &user.id).await;
-                ApiResponse::success("Switched tournaments", None)
+                ApiResponse::success("Switched tournaments", Some(t))
             }
             Err(e) => ApiResponse::error(&e),
         },
         None => match try_join_tournament(conn, &tournament_id, user).await {
-            Ok(_) => ApiResponse::success("Joined tournament", None),
+            Ok(t) => ApiResponse::success("Joined tournament", Some(t)),
             Err(e) => ApiResponse::error(&e),
         },
     };
@@ -92,8 +93,16 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
     if response.success {
         socket.join(tournament_id.clone());
         socket
-            .to(tournament_id)
+            .to(tournament_id.clone())
             .emit("user:joined", user)
+            .await
+            .ok();
+
+        let participants = cache_get_tournament_participants(&tournament_id).await;
+        let tournament_update = TournamentUpdateSchema::new(response.data.unwrap(), participants);
+        socket
+            .to(tournament_id.clone())
+            .emit("tournament:update", &tournament_update)
             .await
             .ok();
     }
@@ -164,11 +173,11 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
         }
     };
 
-    let challenge_text = &tournament.text;
-
-    if challenge_text.is_empty() {
+    let challenge_text = if let Some(text) = &tournament.text {
+        text.as_bytes()
+    } else {
         return;
-    }
+    };
 
     // Initialize start time if not already set
     if typing_session.started_at.is_none() {
@@ -190,7 +199,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
             } else if typing_session.current_position == typing_session.correct_position {
                 if typing_session.current_position > 0 {
                     // Only move correct position back if previous character wasn't a space
-                    if challenge_text[typing_session.current_position - 1] != ' ' {
+                    if challenge_text[typing_session.current_position - 1] != b' ' {
                         typing_session.correct_position -= 1;
                     }
                     typing_session.current_position -= 1;
@@ -203,7 +212,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
             // Only process if within challenge bounds
             if typing_session.current_position < challenge_text.len() {
                 if typing_session.current_position == typing_session.correct_position
-                    && current_char == challenge_text[typing_session.current_position]
+                    && current_char as u8 == challenge_text[typing_session.current_position]
                 {
                     typing_session.correct_position += 1;
                 }
@@ -264,24 +273,27 @@ pub async fn schedule_tournament(
     {
         let tournament = TournamentSchema::from(tournament.clone());
         let tournament_id = tournament.id.clone();
-        // // for some reason, the task future is not being accepted as either Send, Sync, or Static (one of these bounds fail)
-        // let conn = conn.clone();
-        // let task = async move {
-        //         let text = get_or_generate_text(&conn, tournament.id.clone())
-        //     .await
-        //     .unwrap();
-        //     ()
-        // };
-        schedule_new_task(tournament_id, async move {}, tournament.scheduled_for)
+        let conn = conn.clone();
+        let task = async move {
+            let text = match get_or_generate_text(&conn, &tournament.id).await {
+                Ok(text) => text,
+                Err(err) => {
+                    tracing::error!("Error generating typing text: {}", err);
+                    return;
+                }
+            };
+            cache_update_tournament(&tournament.id, |t| {
+                t.text = Some(text);
+                t.started_at = Some(Utc::now());
+            })
+            .await;
+        };
+        schedule_new_task(tournament_id, task, tournament.scheduled_for)
             .await
             .ok();
     }
-    // normally supposed to be an empty string until just before start of tournament
-    let text = get_or_generate_text(&conn, tournament.id.clone())
-        .await
-        .unwrap()
-        .chars()
-        .collect();
+
+    let text = None;
 
     let new_cached_tournament =
         TournamentSession::new(tournament.id.clone(), tournament.scheduled_for, text);

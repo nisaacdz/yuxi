@@ -3,8 +3,8 @@ use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbConn, DbErr, EntityTrait};
 
 use models::domains::{texts, tournaments};
 
-pub async fn get_or_generate_text(db: &DbConn, tournament_id: String) -> Result<String, DbErr> {
-    let tournament = tournaments::Entity::find_by_id(tournament_id.clone())
+pub async fn get_or_generate_text(db: &DbConn, tournament_id: &str) -> Result<String, DbErr> {
+    let tournament = tournaments::Entity::find_by_id(tournament_id.to_owned())
         .one(db)
         .await?;
 

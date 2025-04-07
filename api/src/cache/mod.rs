@@ -60,6 +60,20 @@ pub async fn cache_get_typing_session(client_id: &str) -> Option<TypingSessionSc
     value.map(|v| v.clone())
 }
 
+pub async fn cache_get_tournament_participants(tournament_id: &str) -> Vec<TypingSessionSchema> {
+    let conn = get_cache_connection().await;
+    conn.values()
+        .map(|v| v.downcast_ref::<TypingSessionSchema>())
+        .filter_map(|v| {
+            if matches!(v, Some(u) if u.tournament_id == tournament_id) {
+                Some(v.unwrap().clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
 pub async fn cache_set_typing_session(session: TypingSessionSchema) {
     let mut conn = get_cache_connection().await;
     let cache_id = generate_typing_session_cache_id(&session.tournament_id, &session.client.id);

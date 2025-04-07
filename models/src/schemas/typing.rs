@@ -1,7 +1,22 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::user::ClientSchema;
+use super::{tournament::TournamentSession, user::ClientSchema};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TournamentUpdateSchema {
+    pub tournament: TournamentSession,
+    pub participants: Vec<TypingSessionSchema>,
+}
+
+impl TournamentUpdateSchema {
+    pub fn new(tournament: TournamentSession, participants: Vec<TypingSessionSchema>) -> Self {
+        Self {
+            tournament,
+            participants,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TypingSessionSchema {

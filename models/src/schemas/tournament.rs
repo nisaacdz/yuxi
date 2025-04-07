@@ -57,13 +57,13 @@ pub struct TournamentSession {
     pub scheduled_for: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
-    pub text: Vec<char>,
+    pub text: Option<String>,
     pub joined: i32,
     pub current: i32,
 }
 
 impl TournamentSession {
-    pub fn new(id: String, scheduled_for: DateTime<Utc>, text: Vec<char>) -> Self {
+    pub fn new(id: String, scheduled_for: DateTime<Utc>, text: Option<String>) -> Self {
         Self {
             id,
             scheduled_for,
