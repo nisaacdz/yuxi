@@ -53,7 +53,7 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
         // Case 2: User is in a *different* tournament, try switching
         Some(existing_session) => {
             info!(user_id = %user.id, old_tournament_id = %existing_session.tournament_id, new_tournament_id = %tournament_id, "User switching tournaments");
-            match try_join_tournament(&conn, &tournament_id, &user).await {
+            match try_join_tournament(&conn, &tournament_id, &user, &socket).await {
                 Ok(new_tournament_session) => {
                     // Leave the old tournament room and delete old session
                     socket.leave(existing_session.tournament_id.clone());
@@ -67,7 +67,7 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
         }
         // Case 3: User is not in any tournament, try joining
         None => {
-            join_result = try_join_tournament(&conn, &tournament_id, &user).await;
+            join_result = try_join_tournament(&conn, &tournament_id, &user, &socket).await;
         }
     }
 

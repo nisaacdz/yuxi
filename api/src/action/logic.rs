@@ -2,8 +2,8 @@
 
 use crate::{
     cache::{
-        cache_get_tournament, cache_set_tournament, cache_set_typing_session,
-        cache_update_tournament,
+        cache_get_tournament, cache_get_tournament_participants, cache_set_tournament,
+        cache_set_typing_session, cache_update_tournament,
     },
     scheduler::schedule_new_task,
 };
@@ -11,10 +11,11 @@ use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
 use models::schemas::{
     tournament::{TournamentSchema, TournamentSession},
-    typing::TypingSessionSchema,
+    typing::{TournamentUpdateSchema, TypingSessionSchema},
     user::ClientSchema,
 };
 use sea_orm::DatabaseConnection;
+use socketioxide::extract::SocketRef;
 use tracing::error;
 
 /// Defines the time window before a tournament starts during which joining is still allowed.
@@ -40,6 +41,7 @@ pub async fn try_join_tournament(
     conn: &DatabaseConnection,
     tournament_id: &String,
     user: &ClientSchema,
+    socket: &SocketRef,
 ) -> Result<TournamentSession, String> {
     // Fetch tournament details from the database
     let tournament_result =
@@ -64,7 +66,7 @@ pub async fn try_join_tournament(
 
             // Schedule the tournament (ensures text generation task is set up)
             // This is idempotent due to cache check inside schedule_tournament.
-            let scheduled_tournament = schedule_tournament(conn, tournament).await?; // Propagate scheduling errors
+            let scheduled_tournament = schedule_tournament(conn, tournament, socket).await?; // Propagate scheduling errors
 
             // Cache the user's new typing session
             cache_set_typing_session(new_session).await; // Assuming cache operations don't return critical errors
@@ -96,6 +98,7 @@ pub async fn try_join_tournament(
 pub async fn schedule_tournament(
     conn: &DatabaseConnection,
     tournament: TournamentSchema,
+    socket: &SocketRef,
 ) -> Result<TournamentSession, String> {
     // Check cache first to ensure idempotency
     if let Some(cached_tournament) = cache_get_tournament(&tournament.id).await {
@@ -108,7 +111,7 @@ pub async fn schedule_tournament(
         let tournament_for_task = tournament.clone();
         let tournament_id_for_task = tournament.id.clone();
         let conn_for_task = conn.clone();
-
+        let socket = socket.clone();
         let task = async move {
             match get_or_generate_text(&conn_for_task, &tournament_id_for_task).await {
                 Ok(text) => {
@@ -119,6 +122,20 @@ pub async fn schedule_tournament(
                     })
                     .await;
                     // TODO: Consider broadcasting a "tournament_ready" event here if needed
+                    let participants =
+                        cache_get_tournament_participants(&tournament_id_for_task).await;
+                    let tournament_2 = match cache_get_tournament(&tournament_id_for_task).await {
+                        Some(v) => v,
+                        None => {
+                            return error!("Tournament session not found");
+                        }
+                    };
+                    let tournament_update = TournamentUpdateSchema::new(tournament_2, participants);
+                    socket
+                        .to(tournament_id_for_task)
+                        .emit("tournament:start", &tournament_update)
+                        .await
+                        .ok();
                 }
                 Err(err) => {
                     error!(
