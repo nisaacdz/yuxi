@@ -44,7 +44,7 @@ pub async fn cache_update_tournament(
         let tournament = tournament.downcast_mut::<TournamentSession>().unwrap();
         update(tournament);
         if tournament.current == 0 {
-            conn.remove(&generate_tournament_cache_id(tournament_id));
+            // conn.remove(&generate_tournament_cache_id(tournament_id));
             abort_scheduled_task(&tournament_id.to_owned()).await.ok(); //
         }
     }

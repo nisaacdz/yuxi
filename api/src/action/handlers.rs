@@ -83,9 +83,7 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
         Err(e) => ApiResponse::error(&e),
     };
 
-    if let Err(e) = socket.emit("join:response", &response) {
-        warn!(user_id = %user.id, error = %e, "Failed to send join:response");
-    }
+    socket.emit("join:response", &response).ok();
 
     // If join/switch was successful, update socket rooms and broadcast
     if response.is_success() {
@@ -96,22 +94,25 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
             // Join the socket room for the new tournament
             socket.join(room_id.clone());
 
-            // Notify others in the room that a user joined
-            if let Err(e) = socket.to(room_id.clone()).emit("user:joined", &user).await {
-                warn!(user_id = %user.id, %room_id, error = %e, "Failed to broadcast user:joined");
-            }
+            socket
+                .to(room_id.clone())
+                .emit("user:joined", &user)
+                .await
+                .ok();
 
-            // Fetch updated participant list and broadcast tournament state update
             let participants = cache_get_tournament_participants(&room_id).await;
             let tournament_update =
-                TournamentUpdateSchema::new(joined_tournament_session, participants); // Pass the consumed session data
+                TournamentUpdateSchema::new(joined_tournament_session, participants);
 
-            if let Err(e) = socket
+            let v = socket
                 .to(room_id.clone())
                 .emit("tournament:update", &tournament_update)
-                .await
-            {
-                warn!(user_id = %user.id, %room_id, error = %e, "Failed to broadcast tournament:update");
+                .await;
+
+            if let Err(e) = v {
+                warn!(user_id = %user.id, tournament_id = %room_id, error = %e, "Failed to broadcast tournament:update");
+            } else {
+                info!("updated tournament successfully");
             }
         } else {
             // This case should logically not happen if response.is_success() is true
@@ -186,14 +187,7 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
         }
 
         // TODO: Fetch and broadcast updated TournamentUpdateSchema?
-        // Similar to handle_join, maybe broadcast an update after leave.
-        // let participants = cache_get_tournament_participants(&tournament_id).await;
-        // if let Some(tournament_session) = cache_get_tournament(&tournament_id).await { // Need to fetch tournament state
-        //     let tournament_update = TournamentUpdateSchema::new(tournament_session, participants);
-        //     if let Err(e) = socket.to(tournament_id.clone()).emit("tournament:update", &tournament_update).await {
-        //         warn!(user_id = %user.id, %tournament_id, error = %e, "Failed to broadcast tournament:update after leave");
-        //     }
-        // }
+        // Similar to handle_join, maybe broadcast an update after leave
     }
 
     // Optionally disconnect the socket after leaving? Your original code did this.
@@ -212,12 +206,12 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
 ///
 /// * `client` - The client information of the user who timed out.
 /// * `socket` - The user's socket connection reference.
-pub async fn handle_timeout(client: &ClientSchema, socket: SocketRef) {
+pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
     info!(user_id = %client.id, "Handling inactivity timeout");
     match cache_get_typing_session(&client.id).await {
-        Some(ts) => {
+        Some(_ts) => {
             // Found an active session, proceed to leave the associated tournament
-            handle_leave(ts.tournament_id, socket).await;
+            //handle_leave(ts.tournament_id, socket).await;
         }
         None => {
             // User had no active session when timeout triggered, nothing to leave.

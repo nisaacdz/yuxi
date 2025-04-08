@@ -1,9 +1,9 @@
-//! Contains business logic related to tournament state and scheduling.
+//! Contains logic related to tournament state and scheduling.
 
 use crate::{
     cache::{
-        cache_get_tournament, cache_get_tournament_participants, cache_set_tournament,
-        cache_set_typing_session, cache_update_tournament,
+        cache_get_tournament, cache_set_tournament, cache_set_typing_session,
+        cache_update_tournament,
     },
     scheduler::schedule_new_task,
 };
@@ -11,7 +11,7 @@ use app::persistence::{text::get_or_generate_text, tournaments::get_tournament};
 use chrono::{TimeDelta, Utc};
 use models::schemas::{
     tournament::{TournamentSchema, TournamentSession},
-    typing::{TournamentUpdateSchema, TypingSessionSchema},
+    typing::TypingSessionSchema,
     user::ClientSchema,
 };
 use sea_orm::DatabaseConnection;
@@ -43,7 +43,6 @@ pub async fn try_join_tournament(
     user: &ClientSchema,
     socket: &SocketRef,
 ) -> Result<TournamentSession, String> {
-    // Fetch tournament details from the database
     let tournament_result =
         get_tournament(conn, tournament_id.clone())
             .await
@@ -56,30 +55,16 @@ pub async fn try_join_tournament(
             })?;
 
     if let Some(tournament) = tournament_result {
-        // Check if the joining deadline has passed
         let now = Utc::now();
         let join_deadline = tournament.scheduled_for - TimeDelta::seconds(JOIN_DEADLINE_SECONDS);
 
         if now < join_deadline {
-            // Allow joining the tournament
             let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
 
-            // Schedule the tournament (ensures text generation task is set up)
-            // This is idempotent due to cache check inside schedule_tournament.
             let scheduled_tournament = schedule_tournament(conn, tournament, socket).await?; // Propagate scheduling errors
 
-            // Cache the user's new typing session
-            cache_set_typing_session(new_session).await; // Assuming cache operations don't return critical errors
+            cache_set_typing_session(new_session).await;
 
-            let participants = cache_get_tournament_participants(&scheduled_tournament.id).await;
-            let tournament_update =
-                TournamentUpdateSchema::new(scheduled_tournament.clone(), participants);
-
-            socket
-                .to(scheduled_tournament.id.clone())
-                .emit("tournament:update", &tournament_update)
-                .await
-                .ok();
             Ok(scheduled_tournament)
         } else {
             Err("Tournament join deadline has passed.".to_string())
@@ -118,10 +103,10 @@ pub async fn schedule_tournament(
     {
         // Clone necessary variables for the async task
         let tournament_for_task = tournament.clone();
-        let tournament_id_for_task = tournament.id.clone();
         let conn_for_task = conn.clone();
         let socket = socket.clone();
         let task = async move {
+            let tournament_id_for_task = tournament_for_task.id.clone();
             match get_or_generate_text(&conn_for_task, &tournament_id_for_task).await {
                 Ok(text) => {
                     // Update the cached tournament with the generated text and start time
