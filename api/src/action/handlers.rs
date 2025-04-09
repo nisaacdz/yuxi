@@ -85,12 +85,10 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
 
     socket.emit("join:response", &response).ok();
 
-    // If join/switch was successful, update socket rooms and broadcast
     if response.is_success() {
         if let Some(joined_tournament_session) = response.into_data() {
             // Safely get data
             let room_id = joined_tournament_session.id.clone();
-
             // Join the socket room for the new tournament
             socket.join(room_id.clone());
 
@@ -115,8 +113,7 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
                 info!("updated tournament successfully");
             }
         } else {
-            // This case should logically not happen if response.is_success() is true
-            // and the logic above constructed it correctly.
+            // not supposed to happen? think me carefully but later
             error!(user_id = %user.id, %tournament_id, "Join response was successful but contained no data!");
         }
     }
@@ -248,7 +245,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
 
     if typed_chars.is_empty() {
         warn!(user_id = %user.id, "Received empty typing event. Ignoring.");
-        return; // No characters to process
+        return;
     }
 
     // info!(user_id = %user.id, chars = ?typed_chars, "Received typing event"); // Potentially noisy log
@@ -338,7 +335,7 @@ fn process_typing_input(
     mut session: TypingSessionSchema,
     typed_chars: Vec<char>,
     challenge_text: &[u8],
-    now: DateTime<Utc>,
+    now: DateTime<Utc>, // Time when the event was received/started processing
 ) -> TypingSessionSchema {
     // Initialize start time if this is the first input
     if session.started_at.is_none() {
@@ -348,87 +345,91 @@ fn process_typing_input(
     let text_len = challenge_text.len();
 
     for current_char in typed_chars {
-        // Stop processing if already finished
+        // --- Original Rust structure: Stop processing if already finished ---
+        // This differs from JS which processes the whole batch, but we keep Rust's preferred way.
         if session.correct_position >= text_len && session.ended_at.is_some() {
+            warn!(user_id=%session.client.id, "Received typing input after session ended. Ignoring.");
             break;
         }
 
         if current_char == '\u{8}' {
             // Backspace character (`\b` or unicode backspace)
-            // --- Backspace Logic ---
             if session.current_position > session.correct_position {
                 // If ahead of the correct position (in an error state), just move cursor back.
                 session.current_position -= 1;
             } else if session.current_position == session.correct_position
                 && session.current_position > 0
             {
-                // If at the correct position, move both cursors back.
-                // Original logic included a check to prevent backing over spaces - keeping that.
-                // This prevents WPM from artificially dropping low if someone pauses and hits backspace.
-                // If challenge_text[session.current_position - 1] != b' ' {
-                session.correct_position -= 1; // Allow backspacing over correct chars
-                // }
+                // *** MODIFICATION START: Align backspace with JS logic ***
+                // Check the character *before* the current position.
+                // Only move `correct_position` back if the character being 'deleted' is NOT a space.
+                if challenge_text[session.current_position - 1] != b' ' {
+                    session.correct_position -= 1;
+                }
+                // Always move `current_position` back in this case (if > 0).
+                // *** MODIFICATION END ***
                 session.current_position -= 1;
             }
             // If current_position is 0, backspace does nothing.
-            // No change to total_keystrokes for backspace in this logic.
+            // No change to total_keystrokes for backspace.
         } else {
-            // --- Regular Character Processing ---
+            // --- Regular Character Processing (Original Rust structure) ---
             session.total_keystrokes += 1;
 
-            // Only process if cursor is still within the text bounds
+            // Only process for position changes if cursor is still within the text bounds
             if session.current_position < text_len {
-                // Check if the typed character matches the expected character *at the current position*
                 let expected_char = challenge_text[session.current_position];
+                // Check if the typed character matches the expected character *at the current position*
                 if session.current_position == session.correct_position
                     && (current_char as u32) == (expected_char as u32)
+                // Compare char values
                 {
                     // Correct character typed at the right position
                     session.correct_position += 1;
                 }
-                // Always advance the current (typed) position
+                // Always advance the current (typed) position if within bounds
                 session.current_position += 1;
             }
-            // If current_position >= text_len, typed characters are ignored but still count towards keystrokes.
+            // If current_position >= text_len, typed characters are ignored for position
+            // updates but still count towards keystrokes (consistent with JS).
         }
 
-        // Check for challenge completion *after* processing the character
-        // Must be exactly at the end and not already finished.
+        // --- Original Rust structure: Check for challenge completion *inside* loop ---
+        // This remains, as requested, differing slightly from JS's post-loop check
+        // in handling extra chars within the same completion batch.
         if session.correct_position == text_len && session.ended_at.is_none() {
             session.ended_at = Some(now);
-            // Set current position potentially beyond text_len if they typed extra chars before finishing?
-            // Or clamp it? Let's clamp it for consistency.
+            // Clamp current position for consistency upon finishing
             session.current_position = session.correct_position;
             info!(user_id = %session.client.id, tournament_id = %session.tournament_id, "User finished typing challenge");
             break; // Stop processing further input after finishing
         }
 
-        // Clamp current_position just in case logic allows it to exceed text_len undesirably
-        // session.current_position = session.current_position.min(text_len);
+        // Optional: Clamp current_position preventatively? Original didn't have it here.
+        // session.current_position = session.current_position.min(some_max_value);
     } // End character processing loop
 
-    // --- Calculate Metrics ---
+    // --- Calculate Metrics (Original Rust structure) ---
     if let Some(started_at) = session.started_at {
         // Use ended_at if available, otherwise use 'now' for in-progress calculation.
         let end_time = session.ended_at.unwrap_or(now);
         let duration = end_time.signed_duration_since(started_at);
 
-        // Ensure duration is non-negative and non-zero for calculations. Use a small epsilon.
-        let minutes_elapsed = (duration.num_milliseconds() as f32 / 60000.0).max(0.0001); // Avoid division by zero, use positive elapsed time
+        let minutes_elapsed = (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
 
-        // WPM: (Correct Chars / 5) / Minutes
+        // WPM calculation remains the same
         session.current_speed = (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
 
-        // Accuracy: Correct Chars / Total Keystrokes (excluding backspaces per this logic)
+        // Accuracy calculation remains the same
         session.current_accuracy = if session.total_keystrokes > 0 {
             ((session.correct_position as f32 / session.total_keystrokes as f32) * 100.0)
                 .round()
-                .clamp(0.0, 100.0) // Clamp between 0 and 100
+                .clamp(0.0, 100.0)
         } else {
-            100.0 // Perfect accuracy if no keystrokes yet
+            100.0
         };
     } else {
-        // Should not happen if processing starts correctly, but defensively set to 0.
+        // Default values if calculation isn't possible yet
         session.current_speed = 0.0;
         session.current_accuracy = 100.0;
     }
