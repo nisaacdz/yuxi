@@ -25,16 +25,13 @@ struct TypeArgs {
     character: char,
 }
 
-pub async fn on_connect(conn: DatabaseConnection, socket: SocketRef, Data(_data): Data<Value>) {
+pub async fn enter_tournament(conn: DatabaseConnection, socket: SocketRef) {
+    let tournament_id = socket.ns();
     let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!("Socket.IO connected: {:?}", client);
 
-    socket.on(
-        "join-tournament",
-        async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            handlers::handle_join(tournament_id, socket, conn.clone()).await;
-        },
-    );
+    handlers::handle_join(tournament_id.to_owned(), socket.clone(), conn.clone()).await;
+
     {
         // wait period before processing a new character
         let debounce_duration = Duration::from_millis(100);

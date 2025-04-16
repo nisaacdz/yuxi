@@ -10,7 +10,7 @@ use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
-use crate::action::on_connect;
+use crate::action::enter_tournament;
 use crate::middleware::session;
 use crate::routers::create_router;
 
@@ -48,9 +48,17 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 
     {
         let conn = conn.clone();
-        io.ns("/tournament", async move |socket, data| {
-            on_connect(conn, socket, data).await;
+        let res = io.dyn_ns("/tournament/{tournament_id}", async move |socket| {
+            enter_tournament(conn, socket).await;
         });
+
+        match res {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("Failed to setup dynamic namespace: {e}");
+                panic!("Failed to setup dynamic namespace: {e}")
+            }
+        }
     }
 
     let app_state = AppState { conn };
