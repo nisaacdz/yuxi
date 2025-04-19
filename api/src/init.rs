@@ -48,8 +48,8 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 
     {
         let conn = conn.clone();
-        let res = io.dyn_ns("/tournament/{tournament_id}", async move |socket| {
-            enter_tournament(conn, socket).await;
+        let res = io.dyn_ns("/tournament/{tournament_id}", async move |socket, io| {
+            enter_tournament(conn, socket, io).await;
         });
 
         match res {

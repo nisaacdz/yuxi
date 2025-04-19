@@ -4,8 +4,10 @@ use models::schemas::user::ClientSchema;
 use moderation::FrequencyMonitor;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
-use serde_json::Value;
-use socketioxide::extract::{Data, SocketRef};
+use socketioxide::{
+    SocketIo,
+    extract::{Data, SocketRef},
+};
 use timeout::TimeoutMonitor;
 use tracing::info;
 
@@ -16,21 +18,25 @@ pub(self) mod state;
 mod timeout;
 
 #[derive(Deserialize, Clone, Debug)]
-struct JoinArgs {
-    tournament_id: String,
-}
-
-#[derive(Deserialize, Clone, Debug)]
 struct TypeArgs {
     character: char,
 }
 
-pub async fn enter_tournament(conn: DatabaseConnection, socket: SocketRef) {
-    let tournament_id = socket.ns();
+pub async fn enter_tournament(conn: DatabaseConnection, io: SocketIo, socket: SocketRef) {
+    let tournament_id = socket.ns().trim_start_matches("/tournament/").to_string();
     let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-    info!("Socket.IO connected: {:?}", client);
+    info!(
+        "Socket.IO connected to dynamic namespace {} : {:?}",
+        tournament_id, client
+    );
 
-    handlers::handle_join(tournament_id.to_owned(), socket.clone(), conn.clone()).await;
+    handlers::handle_join(
+        tournament_id.to_owned(),
+        io.clone(),
+        socket.clone(),
+        conn.clone(),
+    )
+    .await;
 
     {
         // wait period before processing a new character
@@ -43,6 +49,7 @@ pub async fn enter_tournament(conn: DatabaseConnection, socket: SocketRef) {
         let max_process_stack_size = 15;
         let cleanup_wait_duration = Duration::from_secs(30);
         let client = client.clone();
+        let io = io.clone();
         let timeout_monitor = {
             let socket = socket.clone();
 
@@ -66,11 +73,12 @@ pub async fn enter_tournament(conn: DatabaseConnection, socket: SocketRef) {
         socket.on("type-character", {
             let frequency_monitor = frequency_monitor.clone();
             let timeout_monitor = timeout_monitor.clone();
+            let io = io.clone();
             async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
                 let processor = async move {
                     frequency_monitor
                         .call(character, move |chars: Vec<char>| {
-                            handlers::handle_typing(socket, chars)
+                            handlers::handle_typing(io, socket, chars)
                         })
                         .await;
                 };
@@ -80,14 +88,17 @@ pub async fn enter_tournament(conn: DatabaseConnection, socket: SocketRef) {
         });
     }
 
-    socket.on(
-        "leave-tournament",
-        async move |socket: SocketRef, Data::<JoinArgs>(JoinArgs { tournament_id })| {
-            handlers::handle_leave(tournament_id, socket).await;
-        },
-    );
+    {
+        let io = io.clone();
+        socket.on("leave-tournament", async move |socket: SocketRef| {
+            handlers::handle_leave(io, socket, tournament_id).await;
+        });
+    }
 
-    socket.on("disconnect", async move |socket: SocketRef| {
-        info!("Socket.IO disconnected: {:?}", socket.id);
-    });
+    {
+        socket.on("disconnect", async move |socket: SocketRef| {
+            info!("Socket.IO disconnected: {:?}", socket.id);
+            socket.leave_all();
+        });
+    }
 }

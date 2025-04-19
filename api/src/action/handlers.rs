@@ -1,5 +1,3 @@
-//! Handles WebSocket events related to typing tournaments.
-
 use super::{logic::try_join_tournament, state::ApiResponse};
 use crate::cache::{
     cache_delete_typing_session, cache_get_tournament, cache_get_tournament_participants,
@@ -13,7 +11,7 @@ use models::schemas::{
     user::ClientSchema,
 };
 use sea_orm::DatabaseConnection;
-use socketioxide::extract::SocketRef;
+use socketioxide::{SocketIo, extract::SocketRef};
 use tracing::{error, info, warn};
 
 /// Handles a client's request to join a tournament.
@@ -26,18 +24,24 @@ use tracing::{error, info, warn};
 /// * `tournament_id` - The ID of the tournament the user wants to join.
 /// * `socket` - The user's socket connection reference.
 /// * `conn` - A database connection.
-pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: DatabaseConnection) {
-    // Retrieve user data attached by middleware
+pub async fn handle_join(
+    tournament_id: String,
+    io: SocketIo,
+    socket: SocketRef,
+    conn: DatabaseConnection,
+) {
     let user = match socket.req_parts().extensions.get::<ClientSchema>() {
-        Some(client) => client.clone(), // Clone to own the data
+        Some(client) => client.clone(),
         None => {
             error!(
                 "ClientSchema not found in socket extensions for ID: {}",
                 socket.id
             );
-            // Optionally send an error response if desired, though this indicates a server setup issue.
-            // let _ = socket.emit("join:response", &ApiResponse::<()>::error("Internal server error: User context missing."));
-            return; // Cannot proceed without user context
+            let _ = socket.emit(
+                "join:response",
+                &ApiResponse::<()>::error("Internal server error"),
+            );
+            return;
         }
     };
     info!(user_id = %user.id, %tournament_id, "Received join request");
@@ -48,21 +52,26 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
     match &current_session {
         // Case 1: User is already in the target tournament
         Some(session) if session.tournament_id == tournament_id => {
-            join_result = Err("Already joined this tournament".to_string());
+            join_result = {
+                match cache_get_tournament(&tournament_id)
+                    .await
+                    .map(|t| t.clone())
+                {
+                    Some(tournament) => Ok(tournament),
+                    None => Err("Failed to retrieve tournament info".to_owned()),
+                }
+            };
         }
-        // Case 2: User is in a *different* tournament, try switching
+
         Some(existing_session) => {
             info!(user_id = %user.id, old_tournament_id = %existing_session.tournament_id, new_tournament_id = %tournament_id, "User switching tournaments");
             match try_join_tournament(&conn, &tournament_id, &user, &socket).await {
                 Ok(new_tournament_session) => {
-                    // Leave the old tournament room and delete old session
                     socket.leave(existing_session.tournament_id.clone());
                     cache_delete_typing_session(&existing_session.tournament_id, &user.id).await;
-                    // TODO: Should we broadcast a "user:left" to the old room?
                     join_result = Ok(new_tournament_session);
-                    // The success message will be set later
                 }
-                Err(e) => join_result = Err(e), // Propagate error from try_join_tournament
+                Err(e) => join_result = Err(e),
             }
         }
         // Case 3: User is not in any tournament, try joining
@@ -92,17 +101,13 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
             // Join the socket room for the new tournament
             socket.join(room_id.clone());
 
-            socket
-                .to(room_id.clone())
-                .emit("user:joined", &user)
-                .await
-                .ok();
+            io.to(room_id.clone()).emit("user:joined", &user).await.ok();
 
             let participants = cache_get_tournament_participants(&room_id).await;
             let tournament_update =
                 TournamentUpdateSchema::new(joined_tournament_session, participants);
 
-            let v = socket
+            let v = io
                 .to(room_id.clone())
                 .emit("tournament:update", &tournament_update)
                 .await;
@@ -128,7 +133,7 @@ pub async fn handle_join(tournament_id: String, socket: SocketRef, conn: Databas
 ///
 /// * `tournament_id` - The ID of the tournament the user wants to leave.
 /// * `socket` - The user's socket connection reference.
-pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
+pub async fn handle_leave(io: SocketIo, socket: SocketRef, tournament_id: String) {
     let user = match socket.req_parts().extensions.get::<ClientSchema>() {
         Some(client) => client.clone(),
         None => {
@@ -175,7 +180,7 @@ pub async fn handle_leave(tournament_id: String, socket: SocketRef) {
         socket.leave(tournament_id.clone());
 
         // Notify others in the room
-        if let Err(e) = socket
+        if let Err(e) = io
             .to(tournament_id.clone())
             .emit("user:left", &user) // Send the user who left
             .await
@@ -231,7 +236,7 @@ pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
 ///
 /// * `socket` - The user's socket connection reference.
 /// * `typed_chars` - A vector of characters typed by the user since the last update.
-pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
+pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<char>) {
     let user = match socket.req_parts().extensions.get::<ClientSchema>() {
         Some(client) => client.clone(),
         None => {
@@ -309,7 +314,7 @@ pub async fn handle_typing(socket: SocketRef, typed_chars: Vec<char>) {
 
     let response = ApiResponse::success("Progress updated", Some(updated_session)); // Send the whole updated session
 
-    if let Err(e) = socket
+    if let Err(e) = io
         .to(tournament.id.clone()) // Use tournament ID from fetched data
         .emit("typing:update", &response)
         .await
@@ -335,9 +340,8 @@ fn process_typing_input(
     mut session: TypingSessionSchema,
     typed_chars: Vec<char>,
     challenge_text: &[u8],
-    now: DateTime<Utc>, // Time when the event was received/started processing
+    now: DateTime<Utc>,
 ) -> TypingSessionSchema {
-    // Initialize start time if this is the first input
     if session.started_at.is_none() {
         session.started_at = Some(now);
     }
@@ -345,8 +349,6 @@ fn process_typing_input(
     let text_len = challenge_text.len();
 
     for current_char in typed_chars {
-        // --- Original Rust structure: Stop processing if already finished ---
-        // This differs from JS which processes the whole batch, but we keep Rust's preferred way.
         if session.correct_position >= text_len && session.ended_at.is_some() {
             warn!(user_id=%session.client.id, "Received typing input after session ended. Ignoring.");
             break;
@@ -355,72 +357,47 @@ fn process_typing_input(
         if current_char == '\u{8}' {
             // Backspace character (`\b` or unicode backspace)
             if session.current_position > session.correct_position {
-                // If ahead of the correct position (in an error state), just move cursor back.
                 session.current_position -= 1;
             } else if session.current_position == session.correct_position
                 && session.current_position > 0
             {
-                // *** MODIFICATION START: Align backspace with JS logic ***
-                // Check the character *before* the current position.
-                // Only move `correct_position` back if the character being 'deleted' is NOT a space.
                 if challenge_text[session.current_position - 1] != b' ' {
                     session.correct_position -= 1;
+                    session.current_position -= 1;
                 }
-                // Always move `current_position` back in this case (if > 0).
-                // *** MODIFICATION END ***
-                session.current_position -= 1;
             }
             // If current_position is 0, backspace does nothing.
             // No change to total_keystrokes for backspace.
         } else {
-            // --- Regular Character Processing (Original Rust structure) ---
             session.total_keystrokes += 1;
 
-            // Only process for position changes if cursor is still within the text bounds
             if session.current_position < text_len {
                 let expected_char = challenge_text[session.current_position];
-                // Check if the typed character matches the expected character *at the current position*
                 if session.current_position == session.correct_position
                     && (current_char as u32) == (expected_char as u32)
-                // Compare char values
                 {
-                    // Correct character typed at the right position
                     session.correct_position += 1;
                 }
-                // Always advance the current (typed) position if within bounds
                 session.current_position += 1;
             }
-            // If current_position >= text_len, typed characters are ignored for position
-            // updates but still count towards keystrokes (consistent with JS).
         }
 
-        // --- Original Rust structure: Check for challenge completion *inside* loop ---
-        // This remains, as requested, differing slightly from JS's post-loop check
-        // in handling extra chars within the same completion batch.
         if session.correct_position == text_len && session.ended_at.is_none() {
             session.ended_at = Some(now);
-            // Clamp current position for consistency upon finishing
             session.current_position = session.correct_position;
             info!(user_id = %session.client.id, tournament_id = %session.tournament_id, "User finished typing challenge");
-            break; // Stop processing further input after finishing
+            break;
         }
+    }
 
-        // Optional: Clamp current_position preventatively? Original didn't have it here.
-        // session.current_position = session.current_position.min(some_max_value);
-    } // End character processing loop
-
-    // --- Calculate Metrics (Original Rust structure) ---
     if let Some(started_at) = session.started_at {
-        // Use ended_at if available, otherwise use 'now' for in-progress calculation.
         let end_time = session.ended_at.unwrap_or(now);
         let duration = end_time.signed_duration_since(started_at);
 
         let minutes_elapsed = (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
 
-        // WPM calculation remains the same
         session.current_speed = (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
 
-        // Accuracy calculation remains the same
         session.current_accuracy = if session.total_keystrokes > 0 {
             ((session.correct_position as f32 / session.total_keystrokes as f32) * 100.0)
                 .round()
@@ -429,10 +406,9 @@ fn process_typing_input(
             100.0
         };
     } else {
-        // Default values if calculation isn't possible yet
         session.current_speed = 0.0;
         session.current_accuracy = 100.0;
     }
 
-    session // Return the updated session
+    session
 }
