@@ -40,7 +40,7 @@ const JOIN_DEADLINE_SECONDS: i64 = 15;
 pub async fn try_join_tournament(
     conn: &DatabaseConnection,
     tournament_id: &String,
-    user: &ClientSchema,
+    client: &ClientSchema,
     socket: &SocketRef,
 ) -> Result<TournamentSession, String> {
     let tournament_result =
@@ -59,9 +59,11 @@ pub async fn try_join_tournament(
         let join_deadline = tournament.scheduled_for - TimeDelta::seconds(JOIN_DEADLINE_SECONDS);
 
         if now < join_deadline {
-            let new_session = TypingSessionSchema::new(user.clone(), tournament.id.clone());
+            let new_session = TypingSessionSchema::new(client.clone(), tournament.id.clone());
 
-            let scheduled_tournament = schedule_tournament(conn, tournament, socket).await?; // Propagate scheduling errors
+            let scheduled_tournament = schedule_tournament(conn, tournament, socket).await?;
+
+            tracing::info!("Scheduled tournament start successfully");
 
             cache_set_typing_session(new_session).await;
 

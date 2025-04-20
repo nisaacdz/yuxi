@@ -5,6 +5,7 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
+use socketioxide::extract::SocketRef;
 use tower_cookies::Key;
 use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
@@ -48,6 +49,9 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 
     {
         let conn = conn.clone();
+        io.ns("/", async move |socket: SocketRef| {
+            tracing::info!("default namespace reached: {}", socket.id)
+        });
         let res = io.dyn_ns("/tournament/{tournament_id}", async move |socket, io| {
             enter_tournament(conn, socket, io).await;
         });
