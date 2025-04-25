@@ -9,7 +9,7 @@
     pkgs.rustup
     pkgs.clang
   ];
-
+  
   # Sets environment variables in the workspace
   env = {};
   idx = {

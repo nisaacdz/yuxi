@@ -15,6 +15,9 @@ pub(self) mod handlers;
 pub(self) mod logic;
 mod moderation;
 pub(self) mod state;
+mod manager;
+mod registry;
+
 mod timeout;
 
 #[derive(Deserialize, Clone, Debug)]
