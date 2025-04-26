@@ -1,129 +1,76 @@
-# clean-axum
+# Clean Axum - A Structured Web API Project in Rust
 
-Axum scaffold with clean architecture.
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-You probably don't need [Rust on Rails](https://github.com/loco-rs/loco).
-
-Refer to [this post](https://kigawas.me/posts/rustacean-clean-architecture-approach/) for rationale and background.
+Clean Axum is a Rust-based project demonstrating a structured approach to building web APIs using the Axum framework, SeaORM, and a variety of other useful crates. The project emphasizes modularity, clear separation of concerns, and practical implementation of common API features.
 
 ## Features
 
-- [Axum](https://github.com/tokio-rs/axum) framework
-- [SeaORM](https://github.com/SeaQL/sea-orm) domain models
-- Completely separated API routers and DB-related logic (named "persistence" layer)
-- Completely separated input parameters, queries and output schemas
-- OpenAPI documentation ([Swagger UI](https://clean-axum.shuttleapp.rs/docs) and [Scalar](https://clean-axum.shuttleapp.rs/scalar)) powered by [Utoipa](https://github.com/juhaku/utoipa)
-- Error handling with [Anyhow](https://github.com/dtolnay/anyhow)
-- Custom parameter validation with [validator](https://github.com/Keats/validator)
-- Optional [Shuttle](https://www.shuttle.rs/) runtime
-- Optional [prefork](https://docs.rs/prefork/latest/prefork/) workers for maximizing performance on Linux
+*   **Axum Framework:** Utilizes the high-performance Axum web framework for building APIs.
+*   **Clean Structure:** Organizes the project into distinct modules for API logic, application logic, domain models, and utilities, promoting maintainability and scalability.
+*   **SeaORM:** Employs SeaORM for type-safe and idiomatic database interactions.
+*   **User Authentication:** Implements user registration, login, and logout functionality with session management.
+*   **User Management:** Provides endpoints for creating, listing, retrieving, and updating user profiles.
+*   **Tournament management:** Provides endpoints to create tournaments, retrieve tournaments by id, and search upcoming tournaments.
+*   **Error Handling:** Custom error types and handlers for consistent error management.
+*   **Validation:** Uses a custom extractor to enforce API parameter validation.
+*   **Middleware:** Session management using `tower-sessions`.
+* **Actions manager:** A base for action management (timeout, moderation, etc)
+* **Cache:** A customizable cache system.
+*   **Database Migrations:** Uses `utils/src/db.rs` to manage database migrations.
+*   **Testing:** Includes a basic test suite.
 
-## Module hierarchy
+## Modules
 
-### API logic
+*   **`api/`:** Contains the Axum-based API logic, including:
+    *   **`routers/`:** Defines API routes (`auth`, `root`, `user`, etc.).
+    *   **`models/`:** Defines API input and output schemas.
+    *   **`middleware/`**: Handles middleware.
+    *   **`error/`:** Contains custom error types and handling logic.
+    * **`extractor/`:** Custom extractors.
+    *   **`validation/`**: Handle validation.
+    * **`action/`:** Action management.
+    * **`cache/`:** Cache system.
+    *   **`init.rs`:** Initializes the API.
+*   **`app/`:** Contains the core application logic, including:
+    *   **`persistence/`:** Handles database interactions using SeaORM (`users`, `tournaments`, `text`).
+    *   **`error/`:** Custom error handling.
+    * **`state/`:** Define the state used by the app.
+    * **`config/`:** Handle configuration.
+*   **`models/`:** Defines domain models, request parameters, and data schemas.
+    *   **`domains/`:** Core data structures (SeaORM entities).
+    *   **`params/`:** API request parameters.
+    *   **`queries/`:** Define database queries.
+    *   **`schemas/`:** Data serialization schemas.
+* **`utils/`:** Shared utilities.
+    * **`db/`:** Database migration and connection utilities.
+    * **`file/`:** File handling utilities.
+    * **`testing/`:** utilities for testing.
 
-- `api::routers`: Axum endpoints
-- `api::error`: Models and traits for error handling
-- `api::extractor` Custom Axum extractors
-  - `api::extractor::json`: `Json` for bodies and responses
-  - `api::extractor::valid`: `Valid` for JSON body validation
-- `api::validation`: JSON validation model based on `validator`
-- `api::models`: Non domain model API models
-  - `api::models::response`: JSON error response
+## Getting Started
 
-### OpenAPI documentation
+1.  **Clone the repository:**
+  ```
+  git clone https://github.com/nisaacdz/yuxi
+  ```
 
-- `doc`: Utoipa doc declaration
+2.  **Install Rust:**
 
-### API-agonistic application logic
+    If you don't have Rust installed, follow the instructions on the official Rust website: [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
-Main concept: Web framework is replaceable.
+3.  **Set up the database:**
 
-All modules here should not include any specific API web framework logic.
+    * Ensure you have a compatible database (e.g., PostgreSQL) installed and running.
+    * Configure the `DATABASE_URL` in your environment.
 
-- `app::persistence`: DB manipulation (CRUD) functions
-- `app::config`: DB or API server configuration
-- `app::state`: APP state, e.g. DB connection
-- `app::error`: APP errors used by `api::error`. e.g. "User not found"
+4.  **Run the application in dev mode:**
+    * `cargo watch -x run`
 
-### DB/API-agnostic domain models
 
-Main concept: Database (Sqlite/MySQL/PostgreSQL) is replaceable.
+## Contributing
 
-Except `models::domains` and `migration`, all modules are ORM library agnostic.
+Contributions are welcome! Please open an issue or submit a pull request.
 
-- `models::domains`: SeaORM domain models
-- `models::params`: Serde input parameters for creating/updating domain models in DB
-- `models::schemas`: Serde output schemas for combining different domain models
-- `models::queries`: Serde queries for filtering domain models
-- `migration`: SeaORM migration files
+## License
 
-### Unit and integration tests
-
-- `tests::api`: API integration tests. Hierarchy is the same as `api::routers`
-- `tests::app::persistence`: DB/ORM-related unit tests. Hierarchy is the same as `app::persistence`
-
-### Others
-
-- `utils`: Utility functions
-- `main`: Tokio and Shuttle conditional entry point
-
-## Run
-
-### Start server
-
-```bash
-cp .env.example .env
-# touch dev.db
-# cargo install sea-orm-cli
-# sea-orm-cli migrate up
-cargo run
-
-# or for production
-cargo run --release
-```
-
-### Call API
-
-```bash
-curl -X POST http://localhost:3000/users -H "Content-Type: application/json" -d '{"username":"aaa"}'
-curl -X POST http://localhost:3000/users -H "Content-Type: application/json" -d '{"username":"abc"}'
-curl http://localhost:3000/users\?username\=a
-```
-
-### OpenAPI doc (Swagger UI/Scalar)
-
-```bash
-open http://localhost:3000/docs
-open http://localhost:3000/scalar
-```
-
-## Start Shuttle local server
-
-```bash
-# cargo install cargo-shuttle
-cargo shuttle run
-```
-
-Make sure docker engine is running, otherwise:
-
-```bash
-brew install colima docker
-colima start
-sudo ln -sf $HOME/.colima/default/docker.sock /var/run/docker.sock
-```
-
-## Shuttle deployment
-
-```bash
-cargo shuttle login
-cargo shuttle deploy
-```
-
-## Benchmark
-
-```bash
-# edit .env to use Postgres
-cargo run --release
-wrk --latency -t20 -c50 -d10s http://localhost:3000/users\?username\=
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
