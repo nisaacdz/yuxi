@@ -15,7 +15,7 @@ pub(self) mod handlers;
 pub(self) mod logic;
 mod moderation;
 pub(self) mod state;
-mod manager;
+mod rounds;
 mod registry;
 
 mod timeout;

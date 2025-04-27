@@ -1,10 +1,8 @@
 use super::{logic::try_join_tournament, state::ApiResponse};
-use crate::cache::{
-    cache_delete_typing_session, cache_get_tournament, cache_get_tournament_participants,
-    cache_get_typing_session, cache_set_typing_session, cache_update_tournament,
-};
+use crate::cache::Cache;
 
-use chrono::{DateTime, Utc};
+use anyhow::anyhow;
+use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
     tournament::TournamentSession,
     typing::{TournamentUpdateSchema, TypingSessionSchema},
@@ -14,108 +12,31 @@ use sea_orm::DatabaseConnection;
 use socketioxide::{SocketIo, extract::SocketRef};
 use tracing::{error, info, warn};
 
-/// Handles a client's request to join a tournament.
-///
-/// Validates the request, checks current session state, attempts to join via `try_join_tournament`,
-/// updates cache, joins the socket room, and broadcasts updates to participants.
-///
-/// # Arguments
-///
-/// * `tournament_id` - The ID of the tournament the user wants to join.
-/// * `socket` - The user's socket connection reference.
-/// * `conn` - A database connection.
+
+const JOIN_DEADLINE_SECONDS: i64 = 15;
+
 pub async fn handle_join(
     tournament_id: String,
     io: SocketIo,
     socket: SocketRef,
     conn: DatabaseConnection,
-) {
-    let client = match socket.req_parts().extensions.get::<ClientSchema>() {
-        Some(client) => client.clone(),
-        None => {
-            error!(
-                "ClientSchema not found in socket extensions for ID: {}",
-                socket.id
-            );
-            let _ = socket.emit(
-                "join:response",
-                &ApiResponse::<()>::error("Internal server error"),
-            );
-            return;
-        }
-    };
+    cache: Cache<TypingSessionSchema>,
+) -> anyhow::Result<()> {
+    let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!(client_id = %client.id, %tournament_id, "Received join request");
 
-    let current_session = cache_get_typing_session(&client.id).await;
-    let join_result: Result<TournamentSession, String>;
+    let tournament =
+        app::persistence::tournaments::get_tournament(&conn, tournament_id.clone())
+        .await?.ok_or(anyhow!("Tournament not found"))?;
 
-    match &current_session {
-        Some(session) if session.tournament_id == tournament_id => {
-            join_result = {
-                match cache_get_tournament(&tournament_id)
-                    .await
-                    .map(|t| t.clone())
-                {
-                    Some(tournament) => Ok(tournament),
-                    None => Err("Failed to retrieve tournament info".to_owned()),
-                }
-            };
-        }
+    let now: DateTime<Utc> = Utc::now();
+    let join_deadline = tournament.scheduled_for - TimeDelta::seconds(JOIN_DEADLINE_SECONDS);
 
-        Some(existing_session) => {
-            info!(client_id = %client.id, old_tournament_id = %existing_session.tournament_id, new_tournament_id = %tournament_id, "User switching tournaments");
-            match try_join_tournament(&conn, &tournament_id, &client, &socket).await {
-                Ok(new_tournament_session) => {
-                    socket.leave(existing_session.tournament_id.clone());
-                    cache_delete_typing_session(&existing_session.tournament_id, &client.id).await;
-                    join_result = Ok(new_tournament_session);
-                }
-                Err(e) => join_result = Err(e),
-            }
-        }
-
-        None => {
-            join_result = try_join_tournament(&conn, &tournament_id, &client, &socket).await;
-        }
+    if now > join_deadline {
+        return Err(anyhow!("Tournament join deadline has passed."))
     }
-
-    let response = match join_result {
-        Ok(session) => ApiResponse::success("Joined tournament successfully", Some(session)),
-        Err(e) => ApiResponse::error(&e),
-    };
-
-    socket.emit("join:response", &response).ok();
-
-    if response.is_success() {
-        if let Some(joined_tournament_session) = response.into_data() {
-            let room_id = joined_tournament_session.id.clone();
-            socket.join(room_id.clone());
-
-            // get the TypingSession and send as payload instead of client
-            io.to(room_id.clone())
-                .emit("user:joined", &client)
-                .await
-                .ok();
-
-            let participants = cache_get_tournament_participants(&room_id).await;
-            let tournament_update =
-                TournamentUpdateSchema::new(joined_tournament_session, participants);
-
-            let v = io
-                .to(room_id.clone())
-                .emit("tournament:update", &tournament_update)
-                .await;
-
-            if let Err(e) = v {
-                warn!(client_id = %client.id, tournament_id = %room_id, error = %e, "Failed to broadcast tournament:update");
-            } else {
-                info!("updated tournament successfully");
-            }
-        } else {
-            // not supposed to happen? think me carefully but later
-            error!(client_id = %client.id, %tournament_id, "Join response was successful but contained no data!");
-        }
-    }
+    
+    return Ok(())
 }
 
 /// Handles a client's request to leave a tournament.
@@ -128,70 +49,8 @@ pub async fn handle_join(
 /// * `tournament_id` - The ID of the tournament the user wants to leave.
 /// * `socket` - The user's socket connection reference.
 pub async fn handle_leave(io: SocketIo, socket: SocketRef, tournament_id: String) {
-    let user = match socket.req_parts().extensions.get::<ClientSchema>() {
-        Some(client) => client.clone(),
-        None => {
-            error!(
-                "ClientSchema not found in socket extensions for ID: {}",
-                socket.id
-            );
-            return;
-        }
-    };
+    let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
     info!(client_id = %user.id, %tournament_id, "Received leave request");
-
-    let response: ApiResponse<()> = match cache_get_typing_session(&user.id).await {
-        Some(session) if session.tournament_id == tournament_id => {
-            // User is in the specified tournament, proceed with leaving
-            cache_delete_typing_session(&tournament_id, &user.id).await;
-            // Decrement participant count (best effort, ignore if tournament not found in cache)
-            let _ = cache_update_tournament(&tournament_id, |t| {
-                if t.current > 0 {
-                    t.current -= 1
-                } // Prevent underflow
-            })
-            .await;
-            ApiResponse::success("Left tournament successfully", None)
-        }
-        Some(session) => {
-            // User is in a *different* tournament
-            warn!(client_id = %user.id, expected_tournament_id = %tournament_id, actual_tournament_id = %session.tournament_id, "User tried to leave wrong tournament");
-            ApiResponse::error("You are not in this tournament.")
-        }
-        None => {
-            // User is not in any active session
-            warn!(client_id = %user.id, %tournament_id, "User tried to leave tournament but has no active session");
-            ApiResponse::error("You do not have an active typing session.")
-        }
-    };
-
-    if let Err(e) = socket.emit("leave:response", &response) {
-        warn!(client_id = %user.id, error = %e, "Failed to send leave:response");
-    }
-
-    if response.is_success() {
-        // Leave the socket room
-        socket.leave(tournament_id.clone());
-
-        // Notify others in the room
-        if let Err(e) = io
-            .to(tournament_id.clone())
-            .emit("user:left", &user) // Send the user who left
-            .await
-        {
-            warn!(client_id = %user.id, %tournament_id, error = %e, "Failed to broadcast user:left");
-        }
-
-        // TODO: Fetch and broadcast updated TournamentUpdateSchema?
-        // Similar to handle_join, maybe broadcast an update after leave
-    }
-
-    // Optionally disconnect the socket after leaving? Your original code did this.
-    // if response.is_success() { // Only disconnect if leave was successful?
-    // if let Err(e) = socket.disconnect() {
-    //     error!(client_id = %user.id, socket_id = %socket.id, error = %e, "Failed to disconnect socket after leaving tournament");
-    // }
-    // }
 }
 
 /// Handles the automatic leaving of a user due to inactivity timeout.
@@ -204,20 +63,7 @@ pub async fn handle_leave(io: SocketIo, socket: SocketRef, tournament_id: String
 /// * `socket` - The user's socket connection reference.
 pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
     info!(client_id = %client.id, "Handling inactivity timeout");
-    match cache_get_typing_session(&client.id).await {
-        Some(_ts) => {
-            // Found an active session, proceed to leave the associated tournament
-            //handle_leave(ts.tournament_id, socket).await;
-        }
-        None => {
-            // User had no active session when timeout triggered, nothing to leave.
-            info!(client_id = %client.id, "Timeout triggered, but no active session found. No action needed.");
-            // Optionally disconnect here if timeout implies disconnection regardless of session state
-            // if let Err(e) = socket.disconnect() {
-            //     error!(client_id = %client.id, socket_id = %socket.id, error = %e, "Failed to disconnect socket on timeout with no session");
-            // }
-        }
-    }
+    
 }
 
 /// Processes a sequence of typed characters from a user.
@@ -247,9 +93,7 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
         return;
     }
 
-    // info!(client_id = %user.id, chars = ?typed_chars, "Received typing event"); // Potentially noisy log
-
-    // --- Get Session and Tournament State ---
+    
     let typing_session = match cache_get_typing_session(&user.id).await {
         Some(session) => session,
         None => {
@@ -288,7 +132,7 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
         }
     };
 
-    // Check if tournament has actually started (started_at is set)
+    
     if tournament.started_at.is_none() {
         warn!(client_id = %user.id, tournament_id = %typing_session.tournament_id, "Typing event received before tournament start time.");
         let _ = socket.emit(
@@ -303,7 +147,6 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
     let updated_session =
         process_typing_input(typing_session, typed_chars, challenge_text_bytes, now);
 
-    // --- Save and Broadcast ---
     cache_set_typing_session(updated_session.clone()).await;
 
     let response = ApiResponse::success("Progress updated", Some(updated_session)); // Send the whole updated session
@@ -317,19 +160,7 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
     }
 }
 
-/// Processes typed characters against the challenge text and updates session metrics.
-///
-/// This is a pure function, taking the current state and input, and returning the new state.
-/// It handles character matching, backspace logic, and metric calculations (WPM, accuracy).
-///
-/// # Arguments
-/// * `session` - The current state of the user's typing session.
-/// * `typed_chars` - The sequence of characters typed.
-/// * `challenge_text` - The target text as bytes.
-/// * `now` - The current timestamp.
-///
-/// # Returns
-/// The updated `TypingSessionSchema`.
+
 fn process_typing_input(
     mut session: TypingSessionSchema,
     typed_chars: Vec<char>,

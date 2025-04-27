@@ -3,10 +3,10 @@
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
   channel = "unstable"; # or "stable-24.05";
-
+  
   # Use https://search.nixos.org/packages to find packages
   packages = [
-    pkgs.rustup
+    pkgs.cargo
     pkgs.clang
   ];
   

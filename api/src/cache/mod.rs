@@ -1,95 +1,46 @@
-use std::{any::Any, collections::HashMap};
-
-use models::schemas::{tournament::TournamentSession, typing::TypingSessionSchema};
-use tokio::sync::{Mutex, MutexGuard};
-
-use crate::scheduler::abort_scheduled_task;
-
-type STORAGE = HashMap<String, Box<dyn Any + Send + Sync>>;
-lazy_static::lazy_static! {
-    static ref CACHE_STORE: Mutex<STORAGE> =
-        Mutex::new(HashMap::new());
+use std::{collections::HashMap, sync::{Arc, Mutex, MutexGuard}};
+#[derive(Clone)]
+pub struct Cache<T> {
+    data: Arc<Mutex<HashMap<String, T>>>,
 }
 
-pub async fn get_cache_connection() -> MutexGuard<'static, STORAGE> {
-    CACHE_STORE.lock().await
-}
-
-const TOURNAMENT_PREFIX: &str = "T-";
-const TYPING_SESSION_PREFIX: &str = "TS-";
-
-pub async fn cache_get_tournament(tournament_id: &str) -> Option<TournamentSession> {
-    let conn = get_cache_connection().await;
-    let value = conn.get(&generate_tournament_cache_id(tournament_id));
-    value
-        .map(|v| v.downcast_ref::<TournamentSession>())
-        .flatten()
-        .map(|v| v.clone())
-}
-
-pub async fn cache_set_tournament(tournament_id: &str, tournament: TournamentSession) {
-    let mut conn = get_cache_connection().await;
-    conn.insert(
-        generate_tournament_cache_id(tournament_id),
-        Box::new(tournament),
-    );
-}
-
-pub async fn cache_update_tournament(
-    tournament_id: &str,
-    update: impl FnOnce(&mut TournamentSession),
-) {
-    let mut conn = get_cache_connection().await;
-    if let Some(tournament) = conn.get_mut(&generate_tournament_cache_id(tournament_id)) {
-        let tournament = tournament.downcast_mut::<TournamentSession>().unwrap();
-        update(tournament);
-        if tournament.current == 0 {
-            // conn.remove(&generate_tournament_cache_id(tournament_id));
-            abort_scheduled_task(&tournament_id.to_owned()).await.ok(); //
+impl<T> Cache<T> {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+    fn get_connection(&self) -> MutexGuard<'_, HashMap<String, T>> {
+        self.data.lock().unwrap()
+    }
+    pub fn set_data(&self, id: &str, data: T) {
+        let mut conn = self.get_connection();
+        conn.insert(id.to_owned(), data);
+    }
+
+    pub fn update_data<F, O>(&self, id: &str, update: F) -> Option<O>
+    where F: FnOnce(&mut T) -> O
+    {
+        let mut conn = self.get_connection();
+        conn.get_mut(id).map(|data| update(data))
+    }
+
+    pub fn delete_data(&self, id: &str) {
+        let mut conn = self.get_connection();
+        conn.remove(id);
     }
 }
 
-pub async fn cache_get_typing_session(client_id: &str) -> Option<TypingSessionSchema> {
-    let conn = get_cache_connection().await;
-    let value = conn
-        .values()
-        .map(|v| v.downcast_ref::<TypingSessionSchema>())
-        .find(|v| matches!(v, Some(v) if v.client.id == client_id))
-        .flatten();
-    value.map(|v| v.clone())
+impl<T: Clone> Cache<T> {
+    pub fn get_data(&self, id: &str) -> Option<T> {
+        let conn = self.get_connection();
+        conn.get(id)
+            .map(|data| data.clone())
+    }
 }
 
-pub async fn cache_get_tournament_participants(tournament_id: &str) -> Vec<TypingSessionSchema> {
-    let conn = get_cache_connection().await;
-    conn.values()
-        .map(|v| v.downcast_ref::<TypingSessionSchema>())
-        .filter_map(|v| {
-            if matches!(v, Some(u) if u.tournament_id == tournament_id) {
-                Some(v.unwrap().clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-}
-
-pub async fn cache_set_typing_session(session: TypingSessionSchema) {
-    let mut conn = get_cache_connection().await;
-    let cache_id = generate_typing_session_cache_id(&session.tournament_id, &session.client.id);
-    conn.insert(cache_id, Box::new(session));
-}
-
-pub async fn cache_delete_typing_session(tournament_id: &str, client_id: &str) {
-    let mut conn = get_cache_connection().await;
-    conn.remove(&generate_typing_session_cache_id(tournament_id, client_id));
-    cache_update_tournament(tournament_id, |t| t.current -= 1).await;
-}
-
-fn generate_typing_session_cache_id(tournament_id: &str, client_id: &str) -> String {
-    format!("{TYPING_SESSION_PREFIX}-{}-{}", tournament_id, client_id)
-}
-
-fn generate_tournament_cache_id(tournament_id: &str) -> String {
-    format!("{TOURNAMENT_PREFIX}-{}", tournament_id)
+impl<T> Default for Cache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
