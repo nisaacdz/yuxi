@@ -1,13 +1,16 @@
-use super::{logic::try_join_tournament, state::ApiResponse};
+use super::state::ApiResponse;
 use crate::cache::Cache;
 
 use anyhow::anyhow;
 use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
     tournament::TournamentSession,
-    typing::{TournamentUpdateSchema, TypingSessionSchema},
+    typing::TypingSessionSchema,
     user::ClientSchema,
 };
+
+use std::sync::Arc;
+
 use sea_orm::DatabaseConnection;
 use socketioxide::{SocketIo, extract::SocketRef};
 use tracing::{error, info, warn};
@@ -15,8 +18,8 @@ use tracing::{error, info, warn};
 
 const JOIN_DEADLINE_SECONDS: i64 = 15;
 
-pub async fn handle_join(
-    tournament_id: String,
+pub async fn try_join_tournament(
+    tournament_id: &str,
     io: SocketIo,
     socket: SocketRef,
     conn: DatabaseConnection,
@@ -26,7 +29,7 @@ pub async fn handle_join(
     info!(client_id = %client.id, %tournament_id, "Received join request");
 
     let tournament =
-        app::persistence::tournaments::get_tournament(&conn, tournament_id.clone())
+        app::persistence::tournaments::get_tournament(&conn, tournament_id.to_owned())
         .await?.ok_or(anyhow!("Tournament not found"))?;
 
     let now: DateTime<Utc> = Utc::now();
@@ -76,28 +79,19 @@ pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
 ///
 /// * `socket` - The user's socket connection reference.
 /// * `typed_chars` - A vector of characters typed by the user since the last update.
-pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<char>) {
-    let user = match socket.req_parts().extensions.get::<ClientSchema>() {
-        Some(client) => client.clone(),
-        None => {
-            error!(
-                "ClientSchema not found in socket extensions for ID: {}",
-                socket.id
-            );
-            return;
-        }
-    };
+pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<char>, cache: Cache<TypingSessionSchema>, typing_text: Arc<String>) {
+    let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
 
     if typed_chars.is_empty() {
-        warn!(client_id = %user.id, "Received empty typing event. Ignoring.");
+        warn!(client_id = %client.id, "Received empty typing event. Ignoring.");
         return;
     }
 
     
-    let typing_session = match cache_get_typing_session(&user.id).await {
+    let typing_session = match cache.get_data(&client.id) {
         Some(session) => session,
         None => {
-            warn!(client_id = %user.id, "Typing event received, but no active session found.");
+            warn!(client_id = %client.id, "Typing event received, but no active session found.");
             let _ = socket.emit(
                 "typing:error",
                 &ApiResponse::<()>::error("No active typing session found."),
@@ -106,57 +100,26 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
         }
     };
 
-    let tournament = match cache_get_tournament(&typing_session.tournament_id).await {
-        Some(t) => t,
-        None => {
-            error!(client_id = %user.id, tournament_id = %typing_session.tournament_id, "Active session found, but corresponding tournament not in cache!");
-            let _ = socket.emit(
-                "typing:error",
-                &ApiResponse::<()>::error("Tournament data not found. Please rejoin."),
-            );
-            // Consider cleaning up the orphaned session?
-            // cache_delete_typing_session(&typing_session.tournament_id, &user.id).await;
-            return;
-        }
-    };
 
-    let challenge_text_bytes = match &tournament.text {
-        Some(text) if !text.is_empty() => text.as_bytes(),
-        _ => {
-            warn!(client_id = %user.id, tournament_id = %typing_session.tournament_id, "Typing event received, but tournament text is missing or empty.");
-            let _ = socket.emit(
-                "typing:error",
-                &ApiResponse::<()>::error("Tournament text is not available yet."),
-            );
-            return;
-        }
-    };
-
-    
-    if tournament.started_at.is_none() {
-        warn!(client_id = %user.id, tournament_id = %typing_session.tournament_id, "Typing event received before tournament start time.");
-        let _ = socket.emit(
-            "typing:error",
-            &ApiResponse::<()>::error("Tournament has not started yet."),
-        );
-        return;
-    }
+    let challenge_text_bytes = typing_text.as_bytes();
 
     // --- Process Input and Update State ---
     let now = Utc::now();
     let updated_session =
         process_typing_input(typing_session, typed_chars, challenge_text_bytes, now);
 
-    cache_set_typing_session(updated_session.clone()).await;
+    cache.set_data(&updated_session.client.id, updated_session.clone());
 
-    let response = ApiResponse::success("Progress updated", Some(updated_session)); // Send the whole updated session
+    let response = ApiResponse::success("Progress updated", Some(updated_session));
+
+    let tournament_id = socket.ns().trim_start_matches("/tournament/").to_string();
 
     if let Err(e) = io
-        .to(tournament.id.clone()) // Use tournament ID from fetched data
+        .to(tournament_id.to_owned())
         .emit("typing:update", &response)
         .await
     {
-        warn!(client_id = %user.id, tournament_id = %tournament.id, error = %e, "Failed to broadcast typing:update");
+        warn!(client_id = %client.id, tournament_id = %tournament_id, error = %e, "Failed to broadcast typing:update");
     }
 }
 

@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use anyhow::Result;
-use chrono::{TimeDelta, Utc};
+use chrono::Utc;
 use models::schemas::{tournament::TournamentSession, typing::{TournamentUpdateSchema, TypingSessionSchema}, user::ClientSchema};
 use sea_orm::DatabaseConnection;
-use socketioxide::{extract::SocketRef, SocketIo};
+use socketioxide::{extract::{Data, SocketRef}, SocketIo};
 use tracing::{error, info, warn};
 
-use crate::cache::Cache;
+use crate::{action::{handlers::{handle_timeout, try_join_tournament, handle_typing, handle_leave}, moderation::FrequencyMonitor, TypeArgs}, cache::Cache};
 
 use crate::action::{state::ApiResponse, timeout::TimeoutMonitor};
 
@@ -66,13 +66,14 @@ impl TournamentManager {
 
             let task = async move {
                 info!("Scheduled task running for tournament {}", task_tournament_id);
-                tournament_state.lock().await.started_at = Some(Utc::now());
+                let mut tlck = tournament_state.lock().await;
+                tlck.started_at = Some(Utc::now());
             };
             
             match crate::scheduler::schedule_new_task(
-                tournament_id.to_string(), // Task ID
-                task,                      // Task future
-                task_scheduled_for,        // Execution time
+                tournament_id.to_string(),
+                task,
+                task_scheduled_for,
             )
             .await
             {
@@ -107,40 +108,21 @@ impl TournamentManager {
         socket: SocketRef,
     ) -> Result<()> {
         let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-        let tournament_id = self.tournament_id.clone();
+        let tournament_id = &self.tournament_id;
         let client_id = client.id.clone();
         info!("Handling connection for client {} to tournament {}", client_id, tournament_id);
 
-        // --- Check Join Deadline ---
-        let current_tournament_state = self.tournament_state.lock().await.clone(); // Clone the state data
-        let now = Utc::now();
-        let join_deadline = current_tournament_state.scheduled_for - TimeDelta::seconds(JOIN_DEADLINE_SECONDS);
-
-        if now >= join_deadline {
-            warn!("Client {} attempted to join {} after deadline", client_id, tournament_id);
-            let _ = socket.emit("join:response", &ApiResponse::<()>::error("Tournament join deadline has passed."));
-            return Err(anyhow::anyhow!("Join deadline passed"));
-        }
-
-        // --- Create and Store Typing Session ---
-        let new_session = TypingSessionSchema::new(client.clone(), tournament_id.clone());
-        { // Lock participants map briefly
-            let mut participants_guard = self.participants.lock().await;
-            // Optional: Handle case where user might already be in the map (e.g., reconnect)
-            if participants_guard.contains_key(&client_id) {
-                 warn!("Client {} already has a session in tournament {}. Overwriting.", client_id, tournament_id);
-                 // Or decide on different reconnect logic
+        match try_join_tournament(&tournament_id, self.io.clone(), socket.clone(), self.conn.clone(), self.cache.clone()).await {
+            Ok(_) => {
+                info!("Successfully joined tournament");
+                socket.join(tournament_id.to_owned())
             }
-            participants_guard.insert(client_id.clone(), new_session.clone());
-            info!("Added session for client {} to tournament {}", client_id, tournament_id);
+            Err(err) => {
+                error!("Failed to join tournament: {}", err);
+                let _ = socket.emit("join:response", &ApiResponse::<()>::error("Failed to join tournament"));
+                return Err(err);
+            }
         }
-        
-
-        socket.join(tournament_id.clone());
-        info!("Socket {} joined room {}", socket.id, tournament_id);
-
-        let join_response = ApiResponse::success("Joined tournament successfully", Some(&current_tournament_state));
-        socket.emit("join:response", &join_response)?;
 
 
         self.broadcast_tournament_update().await;
@@ -153,20 +135,12 @@ impl TournamentManager {
 
 
     fn register_socket_listeners(self: &Arc<Self>, client: ClientSchema, socket: SocketRef) {
-        let tournament_id = socket.ns().trim_start_matches("/tournament/").to_string();
+        let tournament_id = &self.tournament_id;
         let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
         info!(
             "Socket.IO connected to dynamic namespace {} : {:?}",
             tournament_id, client
         );
-
-        handlers::handle_join(
-            tournament_id.to_owned(),
-            self.io.clone(),
-            socket.clone(),
-            self.conn.clone(),
-        )
-        .await;
 
         {
             // wait period before processing a new character
@@ -178,8 +152,9 @@ impl TournamentManager {
             // but will likely be instantaneous under normal circumstances
             let max_process_stack_size = 15;
             let cleanup_wait_duration = Duration::from_secs(30);
+            let typing_text = self.typing_text.clone();
             let client = client.clone();
-            let io = io.clone();
+            let io = self.io.clone();
             let timeout_monitor = {
                 let socket = socket.clone();
 
@@ -187,12 +162,14 @@ impl TournamentManager {
 
                 Arc::new(TimeoutMonitor::new(
                     async move || {
-                        handlers::handle_timeout(&client, socket).await;
+                        handle_timeout(&client, socket).await;
                     },
                     after_timeout_fn,
                     cleanup_wait_duration,
                 ))
             };
+
+            let cache = self.cache.clone();
 
             let frequency_monitor = Arc::new(FrequencyMonitor::new(
                 debounce_duration,
@@ -204,11 +181,12 @@ impl TournamentManager {
                 let frequency_monitor = frequency_monitor.clone();
                 let timeout_monitor = timeout_monitor.clone();
                 let io = io.clone();
+                let typing_text = typing_text.clone();
                 async move |socket: SocketRef, Data::<TypeArgs>(TypeArgs { character })| {
                     let processor = async move {
                         frequency_monitor
                             .call(character, move |chars: Vec<char>| {
-                                handlers::handle_typing(io, socket, chars)
+                                handle_typing(io, socket, chars, cache, typing_text)
                             })
                             .await;
                     };
@@ -219,9 +197,9 @@ impl TournamentManager {
         }
 
         {
-            let io = io.clone();
+            let io = self.io.clone();
             socket.on("leave-tournament", async move |socket: SocketRef| {
-                handlers::handle_leave(io, socket, tournament_id).await;
+                handle_leave(io, socket, tournament_id.to_owned()).await;
             });
         }
 
@@ -230,66 +208,6 @@ impl TournamentManager {
                 info!("Socket.IO disconnected: {:?}", socket.id);
                 socket.leave_all();
             });
-        }
-    }
-
-
-    // --- Internal Helper Methods ---
-
-    /// Internal logic for handling character typing.
-    async fn handle_typing_internal(self: &Arc<Self>, client_id: &str, typed_chars: Vec<char>) {
-        if typed_chars.is_empty() {
-            // warn!("Empty typing event for {}", client_id); // Maybe too noisy
-            return;
-        }
-
-        let tournament_state = self.tournament_state.lock().await; // Lock state
-        let challenge_text_bytes = match &tournament_state.text {
-            Some(text) if !text.is_empty() => text.as_bytes(),
-            _ => {
-                warn!("Typing event for {} but tournament text is not ready/available.", client_id);
-                // Optionally emit an error back to the specific client?
-                // let _ = self.io.to(socket_id).emit("typing:error", ...); // Need socket id here
-                return; // Cannot process typing without text
-            }
-        };
-
-        if tournament_state.started_at.is_none() {
-             warn!("Typing event for {} before tournament start.", client_id);
-             // Optionally emit an error back to the specific client?
-             return;
-        }
-
-        // Drop the state lock before locking participants
-        drop(tournament_state);
-
-        let mut participants_guard = self.participants.lock().await; // Lock participants
-        if let Some(session) = participants_guard.get_mut(client_id) {
-            let now = Utc::now();
-             // Use the existing pure logic function
-            let updated_session = process_typing_input(session.clone(), typed_chars, challenge_text_bytes, now); // Clone session for update
-
-            // Update the session in the map
-            *session = updated_session.clone(); // Update in place
-
-             // TODO: Persist progress update maybe? Or only at the end?
-             // cache_set_typing_session(updated_session.clone()).await; // Update cache if needed frequently
-
-             // Prepare broadcast data (just the updated session)
-             let response = ApiResponse::success("Progress updated", Some(&updated_session)); // Send updated session
-
-            // Release participants lock *before* await on broadcast
-             drop(participants_guard);
-
-             // Broadcast update to the room
-            if let Err(e) = self.io.to(self.tournament_id.clone()).emit("typing:update", &response).await {
-                 warn!("Failed to broadcast typing:update for {}: {}", client_id, e);
-            }
-
-        } else {
-             warn!("Typing event for client {} but no session found in manager.", client_id);
-             // Drop lock if not found
-             drop(participants_guard);
         }
     }
 
@@ -307,13 +225,7 @@ impl TournamentManager {
              // Release lock before await calls
              drop(participants_guard);
 
-             // Leave the socket room (important!)
-            if let Err(e) = socket.leave(self.tournament_id.clone()) {
-                warn!("Failed to leave room {} for socket {}: {}", self.tournament_id, socket.id, e);
-                // Continue cleanup anyway
-            } else {
-                 info!("Socket {} left room {}", socket.id, self.tournament_id);
-            }
+             socket.leave(self.tournament_id.clone());
 
 
              // Broadcast that user left (send ClientSchema or just ID)

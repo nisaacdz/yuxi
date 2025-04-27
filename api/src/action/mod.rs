@@ -12,7 +12,6 @@ use timeout::TimeoutMonitor;
 use tracing::info;
 
 pub(self) mod handlers;
-pub(self) mod logic;
 mod moderation;
 pub(self) mod state;
 mod rounds;
