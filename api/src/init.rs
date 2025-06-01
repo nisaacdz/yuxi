@@ -10,8 +10,8 @@ use tower_cookies::Key;
 use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
-
-use crate::action::enter_tournament;
+use crate::action::registry::register_tournament_namespace;
+use crate::cache::{TournamentRegistry, TypingSessionRegistry};
 use crate::middleware::session;
 use crate::routers::create_router;
 
@@ -52,17 +52,10 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         io.ns("/", async move |socket: SocketRef| {
             tracing::info!("default namespace reached: {}", socket.id)
         });
-        let res = io.dyn_ns("/tournament/{tournament_id}", async move |socket, io| {
-            enter_tournament(conn, socket, io).await;
-        });
-
-        match res {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Failed to setup dynamic namespace: {e}");
-                panic!("Failed to setup dynamic namespace: {e}")
-            }
-        }
+        let tournament_registry = TournamentRegistry::new();
+        let typing_sessions = TypingSessionRegistry::new();
+        
+        register_tournament_namespace(io, conn, tournament_registry, typing_sessions);
     }
 
     let app_state = AppState { conn };

@@ -1,10 +1,9 @@
 use super::state::ApiResponse;
-use crate::cache::Cache;
+use crate::cache::{Cache, TypingSessionRegistry};
 
 use anyhow::anyhow;
 use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
-    tournament::TournamentSession,
     typing::TypingSessionSchema,
     user::ClientSchema,
 };
@@ -13,48 +12,11 @@ use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 use socketioxide::{SocketIo, extract::SocketRef};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 
 const JOIN_DEADLINE_SECONDS: i64 = 15;
 
-pub async fn try_join_tournament(
-    tournament_id: &str,
-    io: SocketIo,
-    socket: SocketRef,
-    conn: DatabaseConnection,
-    cache: Cache<TypingSessionSchema>,
-) -> anyhow::Result<()> {
-    let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-    info!(client_id = %client.id, %tournament_id, "Received join request");
-
-    let tournament =
-        app::persistence::tournaments::get_tournament(&conn, tournament_id.to_owned())
-        .await?.ok_or(anyhow!("Tournament not found"))?;
-
-    let now: DateTime<Utc> = Utc::now();
-    let join_deadline = tournament.scheduled_for - TimeDelta::seconds(JOIN_DEADLINE_SECONDS);
-
-    if now > join_deadline {
-        return Err(anyhow!("Tournament join deadline has passed."))
-    }
-    
-    return Ok(())
-}
-
-/// Handles a client's request to leave a tournament.
-///
-/// Removes the user's session from the cache, updates the participant count,
-/// leaves the socket room, and notifies other participants.
-///
-/// # Arguments
-///
-/// * `tournament_id` - The ID of the tournament the user wants to leave.
-/// * `socket` - The user's socket connection reference.
-pub async fn handle_leave(io: SocketIo, socket: SocketRef, tournament_id: String) {
-    let user = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-    info!(client_id = %user.id, %tournament_id, "Received leave request");
-}
 
 /// Handles the automatic leaving of a user due to inactivity timeout.
 ///

@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use anyhow::Result;
-use chrono::Utc;
-use models::schemas::{tournament::TournamentSession, typing::{TournamentUpdateSchema, TypingSessionSchema}, user::ClientSchema};
+use chrono::{TimeDelta, Utc};
+use models::{schemas::{tournament::{TournamentSchema, TournamentSession}, typing::{TournamentUpdateSchema, TypingSessionSchema}, user::ClientSchema}};
 use sea_orm::DatabaseConnection;
 use socketioxide::{extract::{Data, SocketRef}, SocketIo};
 use tracing::{error, info, warn};
 
-use crate::{action::{handlers::{handle_timeout, try_join_tournament, handle_typing, handle_leave}, moderation::FrequencyMonitor, TypeArgs}, cache::Cache};
+use crate::{action::{handlers::{handle_timeout, handle_typing}, moderation::FrequencyMonitor, TypeArgs}, cache::{Cache, TournamentRegistry, TypingSessionRegistry}};
 
 use crate::action::{state::ApiResponse, timeout::TimeoutMonitor};
 
@@ -16,40 +16,32 @@ const DEBOUNCE_DURATION: Duration = Duration::from_millis(100);
 const MAX_PROCESS_WAIT: Duration = Duration::from_secs(1);
 const MAX_PROCESS_STACK_SIZE: u32 = 15;
 
+#[derive(Clone)]
 pub struct TournamentManager {
     tournament_id: String,
     tournament_state: Arc<tokio::sync::Mutex<TournamentSession>>,
-    participants: Arc<tokio::sync::Mutex<HashMap<String, TypingSessionSchema>>>,
+    participants: Cache<TypingSessionSchema>,
     io: SocketIo,
     conn: DatabaseConnection,
-    cache: Cache<TypingSessionSchema>,
+    session_registry: TypingSessionRegistry,
     typing_text: Arc<String>,
+    tournament_registry: TournamentRegistry,
 }
 
 impl TournamentManager {
-    pub async fn init(
-        tournament_id: &str,
+    pub fn new(
+        tournament: TournamentSchema,
+        typing_text: String,
         conn: DatabaseConnection,
         io: SocketIo,
-        cache: Cache<TypingSessionSchema>
-    ) -> Result<Self> {
-        info!("Initializing TournamentManager for {}", tournament_id);
-        let tournament_schema = app::persistence::tournaments::get_tournament(&conn, tournament_id.to_string())
-            .await
-            .map_err(|db_err| {
-                error!("DB error fetching tournament {}: {}", tournament_id, db_err);
-                anyhow::anyhow!("Failed to retrieve tournament details from DB")
-            })?
-            .ok_or_else(|| {
-                warn!("Tournament {} not found in database", tournament_id);
-                anyhow::anyhow!("Tournament not found")
-            })?;
-
-        let typing_text = app::persistence::text::get_or_generate_text(&conn, tournament_id).await?;
+        session_registry: TypingSessionRegistry,
+        tournament_registry: TournamentRegistry,
+    ) -> Self {
+        info!("Initializing TournamentManager for {}", &tournament.id);
 
         let initial_session = TournamentSession::new(
-            tournament_schema.id.clone(),
-            tournament_schema.scheduled_for,
+            tournament.id.clone(),
+            tournament.scheduled_for,
             Some(typing_text.clone())
         );
 
@@ -57,12 +49,12 @@ impl TournamentManager {
 
         let typing_text = Arc::new(typing_text);
 
-        let participants = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let participants = Cache::new();
 
         {
-            let task_tournament_id = tournament_id.to_string();
+            let task_tournament_id = tournament.id.to_string();
             let tournament_state = tournament_state.clone();
-            let task_scheduled_for = tournament_schema.scheduled_for;
+            let task_scheduled_for = tournament.scheduled_for;
 
             let task = async move {
                 info!("Scheduled task running for tournament {}", task_tournament_id);
@@ -70,36 +62,40 @@ impl TournamentManager {
                 tlck.started_at = Some(Utc::now());
             };
             
-            match crate::scheduler::schedule_new_task(
-                tournament_id.to_string(),
+            let tournament_id = tournament.id.clone();
+            tokio::task::spawn(async move {
+                match crate::scheduler::schedule_new_task(
+                tournament_id.clone(),
                 task,
                 task_scheduled_for,
             )
             .await
             {
                 Ok(handle) => {
-                    info!("Successfully scheduled start task for tournament {}", tournament_id);
-                    Some(handle)
+                    info!("Successfully scheduled start task for tournament {}", &tournament_id);
+                    Ok(handle)
                 }
                 Err(schedule_err) => {
-                    error!("Failed to schedule task for tournament {}: {}", tournament_id, schedule_err);
-                    return Err(anyhow::anyhow!(
+                    error!("Failed to schedule task for tournament {}: {}", &tournament_id, schedule_err);
+                    Err(anyhow::anyhow!(
                         "Failed to schedule tournament start task: {}",
                         schedule_err
-                    ));
+                    ))
                 }
             }
+            })
         };
 
-        Ok(Self {
-            tournament_id: tournament_id.to_string(),
+        Self {
+            tournament_id: tournament.id.to_string(),
             tournament_state,
             participants,
             io,
             conn,
             typing_text,
-            cache,
-        })
+            session_registry,
+            tournament_registry,
+        }
     }
 
     
@@ -107,34 +103,40 @@ impl TournamentManager {
         self: &Arc<Self>,
         socket: SocketRef,
     ) -> Result<()> {
-        let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
-        let tournament_id = &self.tournament_id;
-        let client_id = client.id.clone();
-        info!("Handling connection for client {} to tournament {}", client_id, tournament_id);
+        let now = Utc::now();
 
-        match try_join_tournament(&tournament_id, self.io.clone(), socket.clone(), self.conn.clone(), self.cache.clone()).await {
-            Ok(_) => {
-                info!("Successfully joined tournament");
-                socket.join(tournament_id.to_owned())
-            }
-            Err(err) => {
-                error!("Failed to join tournament: {}", err);
-                let _ = socket.emit("join:response", &ApiResponse::<()>::error("Failed to join tournament"));
-                return Err(err);
+        let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
+
+        {
+            let tournament_state = self.tournament_state.lock().await;
+
+            if !self.participants.contains_key(&client.id) && (tournament_state.started_at.is_some() || tournament_state.scheduled_for - now < TimeDelta::seconds(JOIN_DEADLINE_SECONDS)) {
+                error!("Tournament {} has already started or is not scheduled.", self.tournament_id);
+                let _ = socket.emit("join:response", &ApiResponse::<()>::error("Tournament has already started or is not scheduled."));
+                return Err(anyhow::anyhow!("Tournament has already started or is not scheduled."));
             }
         }
 
+        let tournament_id = &self.tournament_id;
+        
+        info!("Handling connection for client {} to tournament {}", &client.id, tournament_id);
+
+        self.participants
+            .get_or_insert(&client.id, || TypingSessionSchema::new(client.clone(), tournament_id.clone()));
+
+        self.session_registry
+            .set_session(&client.id, TypingSessionSchema::new(client.clone(), tournament_id.clone()));
 
         self.broadcast_tournament_update().await;
 
 
-        self.register_socket_listeners(client.clone(), socket.clone());
+        self.register_socket_listeners(socket.clone());
 
         Ok(())
     }
 
 
-    fn register_socket_listeners(self: &Arc<Self>, client: ClientSchema, socket: SocketRef) {
+    fn register_socket_listeners(self: &Arc<Self>, socket: SocketRef) {
         let tournament_id = &self.tournament_id;
         let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
         info!(
@@ -169,7 +171,7 @@ impl TournamentManager {
                 ))
             };
 
-            let cache = self.cache.clone();
+            let cache = self.participants.clone();
 
             let frequency_monitor = Arc::new(FrequencyMonitor::new(
                 debounce_duration,
@@ -197,16 +199,25 @@ impl TournamentManager {
         }
 
         {
-            let io = self.io.clone();
+            let manager = self.clone();
+
             socket.on("leave-tournament", async move |socket: SocketRef| {
-                handle_leave(io, socket, tournament_id.to_owned()).await;
+                let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
+                info!("Received leave request from client {} in tournament {}", client.id, manager.tournament_id);
+
+                // Handle leave request
+                if let Err(e) = manager.handle_leave_internal(&client.id, &socket, false).await {
+                    warn!("Failed to handle leave request for {}: {}", client.id, e);
+                    let response = ApiResponse::<()>::error("Failed to leave tournament.");
+                    let _ = socket.emit("leave:response", &response);
+                }
             });
         }
 
         {
             socket.on("disconnect", async move |socket: SocketRef| {
                 info!("Socket.IO disconnected: {:?}", socket.id);
-                socket.leave_all();
+                // Will likely reconnect, so we handle it gracefully
             });
         }
     }
@@ -214,16 +225,9 @@ impl TournamentManager {
     /// Internal logic for handling leave or disconnect.
     async fn handle_leave_internal(self: &Arc<Self>, client_id: &str, socket: &SocketRef, is_disconnect: bool) -> Result<()> {
          info!("Handling leave/disconnect for client {}. Is disconnect: {}", client_id, is_disconnect);
-         let mut participants_guard = self.participants.lock().await;
-
-         if let Some(session) = participants_guard.remove(client_id) {
+         
+         if let Some(session) = self.participants.delete_data(client_id) {
              info!("Removed session for client {} from tournament {}", client_id, self.tournament_id);
-
-             // TODO: Persist final state? Delete from cache?
-             // cache_delete_typing_session(&self.tournament_id, client_id).await;
-
-             // Release lock before await calls
-             drop(participants_guard);
 
              socket.leave(self.tournament_id.clone());
 
@@ -254,8 +258,6 @@ impl TournamentManager {
                  let response = ApiResponse::<()>::error("You are not in this tournament session.");
                   let _ = socket.emit("leave:response", &response);
               }
-             // Release lock
-              drop(participants_guard);
               Err(anyhow::anyhow!("Client session not found"))
          }
     }
@@ -263,18 +265,13 @@ impl TournamentManager {
      /// Fetches current state and broadcasts `tournament:update` to the room.
      async fn broadcast_tournament_update(self: &Arc<Self>) {
          let tournament_state_data;
-         let participants_list;
-
-         { // Lock state briefly to get consistent data
-             let state_guard = self.tournament_state.lock().await;
-             tournament_state_data = state_guard.clone(); // Clone the session data
-
-             let participants_guard = self.participants.lock().await;
-             participants_list = participants_guard.values().cloned().collect::<Vec<_>>(); // Clone participant data
-         } // Locks released
+         let participants_list =
+         {
+             let participants_guard = self.participants.values().cloned().collect::<Vec<_>>(); // Clone participant data
+         };
 
         let update_payload = TournamentUpdateSchema::new(tournament_state_data, participants_list);
-
+        
          if let Err(e) = self.io.to(self.tournament_id.clone()).emit("tournament:update", &update_payload).await {
               warn!("Failed to broadcast tournament:update for {}: {}", self.tournament_id, e);
          } else {
