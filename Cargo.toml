@@ -32,6 +32,8 @@ tower-service = "0.3.3"
 tower-sessions = "0.14.0"
 socketioxide = "0.16.2"
 lazy_static = "1.5.0"
+jsonwebtoken = "9.3.0"
+base64 = "0.22.1"
 
 [dependencies]
 # Local dependencies

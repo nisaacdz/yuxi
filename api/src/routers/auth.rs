@@ -8,42 +8,37 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
-use models::schemas::user::ClientSchema;
+use models::schemas::user::{ClientSchema, TokensSchema};
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
 };
 use sea_orm::TryIntoModel;
-use tower_sessions::Session;
 
 use crate::extractor::Json;
-use crate::{error::ApiError, middleware::session::CLIENT_SESSION_KEY};
+use crate::{error::ApiError, utils::jwt::JwtService};
 
 #[axum::debug_handler]
 pub async fn login_post(
     State(state): State<AppState>,
-    session: Session,
     Extension(client): Extension<ClientSchema>,
     Json(params): Json<LoginUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
     let user = login_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?;
-    let client = ClientSchema {
-        id: client.id,
-        user: Some(UserSchema::from(user)),
-        updated: Utc::now(),
+
+    let jwt_service = JwtService::new()?;
+    let token_pair = jwt_service.generate_token_pair(client.id, Some(user.id))?;
+
+    let user_schema = UserSchema::from(user);
+    let tokens_response = TokensSchema {
+        access_token: token_pair.access_token,
+        refresh_token: token_pair.refresh_token,
+        user: Some(user_schema),
     };
 
-    session
-        .insert(CLIENT_SESSION_KEY, &client)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to insert new client session data: {}", e);
-            ApiError(anyhow::anyhow!("Failed to save session state").context(e))
-        })?;
-
-    Ok(Json(client.user))
+    Ok(Json(tokens_response))
 }
 
 #[axum::debug_handler]

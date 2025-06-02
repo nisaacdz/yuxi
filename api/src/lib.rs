@@ -5,6 +5,7 @@ mod extractor;
 mod init;
 mod middleware;
 mod scheduler;
+mod utils;
 mod validation;
 
 pub mod models;

@@ -45,3 +45,15 @@ impl From<Vec<users::Model>> for UserListSchema {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LoginSchema {
+    pub user: UserSchema,
+    pub tokens: TokensSchema,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TokensSchema {
+    pub access: String,
+    pub refresh: String,
+}
