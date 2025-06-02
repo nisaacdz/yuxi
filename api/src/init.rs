@@ -2,6 +2,10 @@ use axum::Router;
 use axum::http::{HeaderName, HeaderValue, Method, header};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
+use crate::action::registry::register_tournament_namespace;
+use crate::cache::{TournamentRegistry, TypingSessionRegistry};
+use crate::middleware::session;
+use crate::routers::create_router;
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
@@ -10,10 +14,6 @@ use tower_cookies::Key;
 use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
-use crate::action::registry::register_tournament_namespace;
-use crate::cache::{TournamentRegistry, TypingSessionRegistry};
-use crate::middleware::session;
-use crate::routers::create_router;
 
 pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     let cors = CorsLayer::new()
@@ -54,7 +54,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         });
         let tournament_registry = TournamentRegistry::new();
         let typing_sessions = TypingSessionRegistry::new();
-        
+
         register_tournament_namespace(io, conn, tournament_registry, typing_sessions);
     }
 

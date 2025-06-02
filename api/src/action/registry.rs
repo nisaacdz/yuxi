@@ -1,4 +1,3 @@
-use models::schemas::tournament;
 use models::schemas::user::ClientSchema;
 use sea_orm::DatabaseConnection;
 use socketioxide::SocketIo;
@@ -23,28 +22,26 @@ pub fn register_tournament_namespace(
             let conn = conn.clone();
             let socket = socket.clone();
 
-                let client = match socket.req_parts().extensions.get::<ClientSchema>() {
-                    Some(client) => client.clone(),
-                    None => {
-                        error!(
-                            "ClientSchema not found in socket extensions for ID: {}",
-                            socket.id
-                        );
-                        let _ = socket.disconnect();
-                        return;
-                    }
-                };
+            let client = match socket.req_parts().extensions.get::<ClientSchema>() {
+                Some(client) => client.clone(),
+                None => {
+                    error!(
+                        "ClientSchema not found in socket extensions for ID: {}",
+                        socket.id
+                    );
+                    let _ = socket.disconnect();
+                    return;
+                }
+            };
 
-                info!(
-                    "Socket.IO connected for tournament '{}': Client: {:?}",
-                    tournament_id, client.id
-                );
+            info!(
+                "Socket.IO connected for tournament '{}': Client: {:?}",
+                tournament_id, client.id
+            );
 
-                let tournament = match app::persistence::tournaments::get_tournament(
-                    &conn,
-                    tournament_id.clone(),
-                )
-                .await
+            let tournament =
+                match app::persistence::tournaments::get_tournament(&conn, tournament_id.clone())
+                    .await
                 {
                     Ok(Some(tournament)) => tournament,
                     Ok(None) => {
@@ -59,34 +56,35 @@ pub fn register_tournament_namespace(
                     }
                 };
 
-                let typing_text =
-                    match app::persistence::text::get_or_generate_text(&conn, &tournament.id).await {
-                        Ok(text) => text,
-                        Err(e) => {
-                            error!("Error fetching text for tournament '{}': {}", tournament_id, e);
-                            let _ = socket.disconnect();
-                            return;
-                        }
-                    };
+            let typing_text =
+                match app::persistence::text::get_or_generate_text(&conn, &tournament.id).await {
+                    Ok(text) => text,
+                    Err(e) => {
+                        error!(
+                            "Error fetching text for tournament '{}': {}",
+                            tournament_id, e
+                        );
+                        let _ = socket.disconnect();
+                        return;
+                    }
+                };
 
-                let manager = registry
-                    .get_or_init(tournament_id.to_owned(), move || {
-                        TournamentManager::new(
-                            tournament,
-                            typing_text,
-                            conn.clone(),
-                            io,
-                            typing_sessions.clone(),
-                            tournament_registry.clone(),
-                        )
-                    });
+            let manager = registry.get_or_init(tournament_id.to_owned(), move || {
+                TournamentManager::new(
+                    tournament,
+                    typing_text,
+                    conn.clone(),
+                    io,
+                    typing_sessions.clone(),
+                    tournament_registry.clone(),
+                )
+            });
 
-
-                if let Err(e) = manager.connect(socket.clone()).await {
-                    warn!("Error handling client connection for {}: {}", client.id, e);
-                    // Error response already sent within handle_client_connection
-                    let _ = socket.disconnect();
-                }
+            if let Err(e) = manager.connect(socket.clone()).await {
+                warn!("Error handling client connection for {}: {}", client.id, e);
+                // Error response already sent within handle_client_connection
+                let _ = socket.disconnect();
+            }
         },
     );
 

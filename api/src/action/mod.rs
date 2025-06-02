@@ -1,8 +1,8 @@
 use serde::Deserialize;
 pub mod handlers;
 pub mod moderation;
-pub mod state;
 pub mod registry;
+pub mod state;
 
 pub mod manager;
 

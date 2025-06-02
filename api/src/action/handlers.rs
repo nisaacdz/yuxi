@@ -1,22 +1,13 @@
 use super::state::ApiResponse;
-use crate::cache::{Cache, TypingSessionRegistry};
+use crate::cache::Cache;
 
-use anyhow::anyhow;
-use chrono::{DateTime, TimeDelta, Utc};
-use models::schemas::{
-    typing::TypingSessionSchema,
-    user::ClientSchema,
-};
+use chrono::{DateTime, Utc};
+use models::schemas::{typing::TypingSessionSchema, user::ClientSchema};
 
 use std::sync::Arc;
 
-use sea_orm::DatabaseConnection;
 use socketioxide::{SocketIo, extract::SocketRef};
 use tracing::{info, warn};
-
-
-const JOIN_DEADLINE_SECONDS: i64 = 15;
-
 
 /// Handles the automatic leaving of a user due to inactivity timeout.
 ///
@@ -28,7 +19,6 @@ const JOIN_DEADLINE_SECONDS: i64 = 15;
 /// * `socket` - The user's socket connection reference.
 pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
     info!(client_id = %client.id, "Handling inactivity timeout");
-    
 }
 
 /// Processes a sequence of typed characters from a user.
@@ -41,7 +31,13 @@ pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
 ///
 /// * `socket` - The user's socket connection reference.
 /// * `typed_chars` - A vector of characters typed by the user since the last update.
-pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<char>, cache: Cache<TypingSessionSchema>, typing_text: Arc<String>) {
+pub async fn handle_typing(
+    io: SocketIo,
+    socket: SocketRef,
+    typed_chars: Vec<char>,
+    cache: Cache<TypingSessionSchema>,
+    typing_text: Arc<String>,
+) {
     let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
 
     if typed_chars.is_empty() {
@@ -49,7 +45,6 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
         return;
     }
 
-    
     let typing_session = match cache.get_data(&client.id) {
         Some(session) => session,
         None => {
@@ -61,7 +56,6 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
             return;
         }
     };
-
 
     let challenge_text_bytes = typing_text.as_bytes();
 
@@ -84,7 +78,6 @@ pub async fn handle_typing(io: SocketIo, socket: SocketRef, typed_chars: Vec<cha
         warn!(client_id = %client.id, tournament_id = %tournament_id, error = %e, "Failed to broadcast typing:update");
     }
 }
-
 
 fn process_typing_input(
     mut session: TypingSessionSchema,
