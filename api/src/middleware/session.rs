@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 
-pub const CLIENT_SESSION_KEY: &str = "client_session_data_v1";
+pub const CLIENT_SESSION_KEY: &str = "client_session_key";
 
 pub async fn client_session(
     session: Session,

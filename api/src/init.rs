@@ -59,7 +59,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     }
 
     let app_state = AppState { conn };
-
+    
     create_router(app_state)
         .layer(socket_layer)
         .layer(axum::middleware::from_fn(session::client_session))
