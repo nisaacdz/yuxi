@@ -1,5 +1,6 @@
 use app::persistence::users::{create_user, login_user};
 use app::state::AppState;
+use app::utils::encode_data;
 use axum::{
     Extension, Router,
     extract::State,
@@ -16,7 +17,6 @@ use sea_orm::TryIntoModel;
 
 use crate::error::ApiError;
 use crate::extractor::Json;
-use crate::utils::jwt::JwtService;
 
 #[axum::debug_handler]
 pub async fn login_post(
@@ -28,12 +28,14 @@ pub async fn login_post(
         .await
         .map_err(ApiError::from)?;
 
-    let jwt_service = JwtService::new()?;
-    let access = jwt_service.encode_client(&ClientSchema {
-        id: client.id.clone(),
-        user: Some(UserSchema::from(user.clone())),
-        updated: Utc::now(),
-    })?;
+    let access = encode_data(
+        &state.config,
+        &ClientSchema {
+            id: client.id.clone(),
+            user: Some(UserSchema::from(user.clone())),
+            updated: Utc::now(),
+        },
+    )?;
 
     let user_schema = UserSchema::from(user);
     let tokens = TokensSchema { access };
@@ -63,8 +65,7 @@ pub async fn register_post(
         updated: Utc::now(),
     };
 
-    let jwt_service = JwtService::new()?;
-    let access = jwt_service.encode_client(&updated_client_state)?;
+    let access = encode_data(&state.config, &updated_client_state)?;
     let tokens = TokensSchema { access };
     let login_response = LoginSchema {
         user: UserSchema::from(user_db),

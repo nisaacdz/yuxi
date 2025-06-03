@@ -13,7 +13,7 @@ validator = { workspace = true, features = ["derive"] }
 fake = { workspace = true }
 serde_json = { workspace = true }
 tower-cookies = "0.11.0"
-anyhow = "1.0.86"
+anyhow = { workspace = true }
 dotenvy = "0.15.7"
 chrono = { workspace = true }
 socketioxide = { workspace = true }
@@ -22,7 +22,6 @@ uuid = { workspace = true }
 tower-http = { workspace = true }
 lazy_static = { workspace = true }
 tokio = { workspace = true }
-jsonwebtoken = { workspace = true }
 base64 = { workspace = true }
 
 # db

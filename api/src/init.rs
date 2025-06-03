@@ -4,16 +4,13 @@ use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use crate::action::registry::register_tournament_namespace;
 use crate::cache::{TournamentRegistry, TypingSessionRegistry};
-use crate::middleware::jwt::{self, jwt_auth};
+use crate::middleware::jwt::jwt_auth;
 use crate::routers::create_router;
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
 use socketioxide::extract::SocketRef;
-use tower_cookies::Key;
-use tower_cookies::cookie::time::Duration;
 use tower_http::cors::CorsLayer;
-use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
 pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     let cors = CorsLayer::new()
@@ -51,11 +48,11 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         register_tournament_namespace(io, conn, tournament_registry, typing_sessions);
     }
 
-    let app_state = AppState { conn };
+    let app_state = AppState { conn, config };
 
-    create_router(app_state)
+    create_router(app_state.clone())
         .layer(socket_layer)
-        .layer(axum::middleware::from_fn(jwt_auth))
+        .layer(axum::middleware::from_fn_with_state(app_state, jwt_auth))
         .layer(cors)
 }
 

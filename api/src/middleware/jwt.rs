@@ -1,14 +1,22 @@
-use axum::{extract::Request, middleware::Next, response::Response};
+use app::{state::AppState, utils::decode_data};
+use axum::{
+    extract::{Request, State},
+    middleware::Next,
+    response::Response,
+};
 use chrono::Utc;
 use models::schemas::user::ClientSchema;
 use tracing;
 use uuid::Uuid;
 
-use crate::{error::ApiError, utils::jwt::JwtService};
+use crate::error::ApiError;
 
-pub async fn jwt_auth(mut req: Request, next: Next) -> Result<Response, ApiError> {
+pub async fn jwt_auth(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
     let headers = req.headers();
-    let jwt_service = JwtService::new()?;
 
     // Try to extract JWT from Authorization header
     let token = headers
@@ -24,7 +32,7 @@ pub async fn jwt_auth(mut req: Request, next: Next) -> Result<Response, ApiError
 
     let client_session = match token {
         Some(token) => {
-            match jwt_service.decode_client(token) {
+            match decode_data::<ClientSchema>(&state.config, token) {
                 Ok(client) => {
                     tracing::trace!("JWT token decoded successfully for client: {}", client.id);
                     client

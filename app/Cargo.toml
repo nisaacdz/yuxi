@@ -11,3 +11,6 @@ sea-orm = { workspace = true }
 fake = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
+jsonwebtoken = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }

@@ -34,6 +34,7 @@ socketioxide = "0.16.2"
 lazy_static = "1.5.0"
 jsonwebtoken = "9.3.0"
 base64 = "0.22.1"
+anyhow = "1.0.86"
 
 [dependencies]
 # Local dependencies

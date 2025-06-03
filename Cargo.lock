@@ -130,7 +130,6 @@ dependencies = [
  "chrono",
  "dotenvy",
  "fake",
- "jsonwebtoken",
  "lazy_static",
  "models",
  "sea-orm",
@@ -151,11 +150,14 @@ dependencies = [
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bcrypt",
  "chrono",
  "fake",
+ "jsonwebtoken",
  "models",
  "sea-orm",
+ "serde",
 ]
 
 [[package]]
