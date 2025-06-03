@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct ApiError(pub(crate) anyhow::Error);
 
 impl<E> From<E> for ApiError

@@ -55,5 +55,4 @@ pub struct LoginSchema {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TokensSchema {
     pub access: String,
-    pub refresh: String,
 }

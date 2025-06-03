@@ -1,9 +1,4 @@
-use axum::{
-    extract::Request,
-    http::{HeaderMap, StatusCode},
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use chrono::Utc;
 use models::schemas::user::ClientSchema;
 use tracing;
@@ -11,11 +6,8 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, utils::jwt::JwtService};
 
-pub async fn jwt_auth(
-    headers: HeaderMap,
-    mut req: Request,
-    next: Next,
-) -> Result<Response, ApiError> {
+pub async fn jwt_auth(mut req: Request, next: Next) -> Result<Response, ApiError> {
+    let headers = req.headers();
     let jwt_service = JwtService::new()?;
 
     // Try to extract JWT from Authorization header
@@ -32,24 +24,13 @@ pub async fn jwt_auth(
 
     let client_session = match token {
         Some(token) => {
-            match jwt_service.verify_token(token) {
-                Ok(claims) => {
-                    tracing::trace!(
-                        "JWT token verified successfully for client: {}",
-                        claims.client_id
-                    );
-                    ClientSchema {
-                        id: claims.client_id,
-                        user: claims.user_id.map(|id| models::schemas::user::UserSchema {
-                            id,
-                            username: "".to_string(), // We'll need to fetch this from DB if needed
-                            email: "".to_string(),    // We'll need to fetch this from DB if needed
-                        }),
-                        updated: Utc::now(),
-                    }
+            match jwt_service.decode_client(token) {
+                Ok(client) => {
+                    tracing::trace!("JWT token decoded successfully for client: {}", client.id);
+                    client
                 }
                 Err(e) => {
-                    tracing::debug!("Invalid JWT token: {}", e);
+                    tracing::debug!("Invalid JWT token: {:?}", e);
                     // Create anonymous session for invalid/expired tokens
                     ClientSchema {
                         id: Uuid::new_v4().to_string(),
