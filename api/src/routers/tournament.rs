@@ -14,8 +14,8 @@ use models::queries::PaginationQuery;
 use models::schemas::tournament::TournamentSchema;
 use models::{params::tournament::CreateTournamentParams, schemas::user::ClientSchema};
 
-use crate::error::ApiError;
 use crate::extractor::{Json, Valid};
+use crate::{ApiResponse, error::ApiError};
 
 async fn tournaments_post(
     state: State<AppState>,
@@ -46,7 +46,10 @@ async fn tournaments_get(
     let result = search_upcoming_tournaments(&state.conn, query)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(result))
+
+    let response = ApiResponse::success("Tournaments retrieved Successfully", Some(result));
+
+    Ok(Json(response))
 }
 
 pub fn create_tournament_router() -> Router<AppState> {

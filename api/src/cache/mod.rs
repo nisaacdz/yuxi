@@ -126,6 +126,10 @@ impl TypingSessionRegistry {
         }
     }
 
+    pub fn contains_session(&self, client_id: &str) -> bool {
+        self.sessions.contains_key(client_id)
+    }
+
     pub fn get_session(&self, client_id: &str) -> Option<TypingSessionSchema> {
         self.sessions.get_data(client_id)
     }
