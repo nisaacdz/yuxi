@@ -15,6 +15,7 @@ use models::{
 };
 use sea_orm::TryIntoModel;
 
+use crate::ApiResponse;
 use crate::error::ApiError;
 use crate::extractor::Json;
 
@@ -44,7 +45,9 @@ pub async fn login_post(
         tokens,
     };
 
-    Ok(Json(login_response))
+    let response = ApiResponse::success("Login successful", Some(login_response));
+
+    Ok(Json(response))
 }
 
 #[axum::debug_handler]
@@ -72,14 +75,17 @@ pub async fn register_post(
         tokens,
     };
 
-    Ok(Json(login_response))
+    let response = ApiResponse::success("Registration successful", Some(login_response));
+
+    Ok(Json(response))
 }
 
 #[axum::debug_handler]
 pub async fn me_get(
     Extension(client_state): Extension<ClientSchema>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(Json(client_state))
+    let response = ApiResponse::success("User data retrieved", Some(client_state));
+    Ok(Json(response))
 }
 
 pub fn create_auth_router() -> Router<AppState> {

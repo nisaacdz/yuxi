@@ -22,7 +22,7 @@ use crate::{
     cache::{Cache, TournamentRegistry, TypingSessionRegistry},
 };
 
-use crate::action::{state::ApiResponse, timeout::TimeoutMonitor};
+use crate::{ApiResponse, action::timeout::TimeoutMonitor};
 
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
@@ -158,6 +158,7 @@ impl TournamentManager {
             TypingSessionSchema::new(client.clone(), tournament_id.clone())
         });
 
+        // Great!, this will set the global session registry so that the newest session is added
         self.session_registry.set_session(
             &client.id,
             TypingSessionSchema::new(client.clone(), tournament_id.clone()),

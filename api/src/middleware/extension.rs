@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 
-pub async fn jwt_auth(
+pub async fn client_extension(
     State(state): State<AppState>,
     mut req: Request,
     next: Next,

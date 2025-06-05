@@ -11,7 +11,7 @@ pub fn register_tournament_namespace(
     io: SocketIo,
     conn: DatabaseConnection,
     tournament_registry: TournamentRegistry,
-    typing_sessions: TypingSessionRegistry,
+    session_registry: TypingSessionRegistry,
 ) {
     let res = io.clone().dyn_ns(
         "/tournament/{tournament_id}",
@@ -75,7 +75,7 @@ pub fn register_tournament_namespace(
                     typing_text,
                     conn.clone(),
                     io,
-                    typing_sessions.clone(),
+                    session_registry.clone(),
                     tournament_registry.clone(),
                 )
             });

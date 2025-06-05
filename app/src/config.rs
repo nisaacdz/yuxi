@@ -4,7 +4,6 @@ pub struct ConfigInner {
     pub db_url: String,
     pub host: String,
     pub port: u16,
-    pub redis_url: String,
     pub allowed_origin: String,
     pub prefork: bool,
     pub encoding_key: EncodingKey,
@@ -23,19 +22,18 @@ impl Config {
                 .expect("PORT is not set in .env file")
                 .parse()
                 .expect("PORT is not a number"),
-            redis_url: std::env::var("REDIS_URL").expect("REDIS_URL is not set in .env file"),
             allowed_origin: std::env::var("ALLOWED_ORIGIN")
                 .expect("ALLOWED_ORIGIN is not set in .env file"),
-            encoding_key: EncodingKey::from_base64_secret(
-                &std::env::var("JWT_ENCODING_KEY")
-                    .expect("JWT_ENCODING_KEY is not set in .env file"),
-            )
-            .expect("Failed to create encoding key from base64 secret"),
-            decoding_key: DecodingKey::from_base64_secret(
-                &std::env::var("JWT_DECODING_KEY")
-                    .expect("JWT_DECODING_KEY is not set in .env file"),
-            )
-            .expect("Failed to create decoding key from base64 secret"),
+            encoding_key: EncodingKey::from_secret(
+                std::env::var("JWT_SECRET")
+                    .expect("JWT_SECRET is not set in .env file")
+                    .as_bytes(),
+            ),
+            decoding_key: DecodingKey::from_secret(
+                std::env::var("JWT_SECRET")
+                    .expect("JWT_SECRET is not set in .env file")
+                    .as_bytes(),
+            ),
             prefork: std::env::var("PREFORK").is_ok_and(|v| v == "1"),
         };
 
