@@ -55,5 +55,5 @@ async fn tournaments_get(
 pub fn create_tournament_router() -> Router<AppState> {
     Router::new()
         .route("/", get(tournaments_get))
-        .route("/new", post(tournaments_post))
+        .route("/", post(tournaments_post))
 }
