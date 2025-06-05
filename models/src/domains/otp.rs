@@ -6,7 +6,7 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "otp")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub email_id: String,
+    pub email: String,
     pub otp: i32,
     pub created_at: DateTimeWithTimeZone,
 }
@@ -15,7 +15,7 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::users::Entity",
-        from = "Column::EmailId",
+        from = "Column::Email",
         to = "super::users::Column::Email",
         on_update = "NoAction",
         on_delete = "Cascade"

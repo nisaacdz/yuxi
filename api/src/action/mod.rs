@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 pub mod handlers;
 pub mod moderation;
 pub mod registry;

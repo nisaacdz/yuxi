@@ -1,6 +1,6 @@
 use app::persistence::users::{create_user, login_user};
 use app::state::AppState;
-use app::utils::encode_data;
+use app::utils::{encode_data, send_forgot_password_email};
 use axum::{
     Extension, Router,
     extract::State,
@@ -94,12 +94,15 @@ pub async fn forgot_password_post(
     State(state): State<AppState>,
     Json(params): Json<ForgotPasswordBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Involves creating an OTP and sending it to the user's email
-    // No new OTP is created if one already exists
-    // We need to configure the expiration time for the OTP in our Config
-    Err(ApiError::NotImplemented(
-        "Forgot password not implemented".to_string(),
-    ))
+    let email = params.email.trim().to_lowercase();
+    let otp = app::persistence::users::forgot_password(&state, params)
+        .await
+        .map_err(ApiError::from)?;
+
+    send_forgot_password_email(&state.config, &email, &otp.otp.to_string()).await?;
+
+    let response = ApiResponse::success("OTP sent to email", Some("OTP sent successfully"));
+    Ok(Json(response))
 }
 
 #[axum::debug_handler]

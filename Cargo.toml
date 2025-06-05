@@ -35,7 +35,8 @@ lazy_static = "1.5.0"
 jsonwebtoken = "9.3.0"
 base64 = "0.22.1"
 anyhow = "1.0.86"
-lettre = { version = "0.11.17", features = ["tokio1"] }
+lettre = "0.11.17"
+rand = "0.9.1"
 
 [dependencies]
 # Local dependencies

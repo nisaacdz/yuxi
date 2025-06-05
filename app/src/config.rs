@@ -41,6 +41,13 @@ impl Config {
             transponder: AsyncSmtpTransport::<Tokio1Executor>::relay(
                 &std::env::var("SMTP_HOST").expect("SMTP_HOST is not set in .env file"),
             )
+            .expect("Failed to create SMTP transport")
+            .port(
+                std::env::var("SMTP_PORT")
+                    .expect("SMTP_PORT is not set in .env file")
+                    .parse()
+                    .expect("SMTP_PORT is not a number"),
+            )
             .credentials(Credentials::new(
                 std::env::var("SMTP_USER").expect("SMTP_USER is not set in .env file"),
                 std::env::var("SMTP_PASS").expect("SMTP_PASS is not set in .env file"),

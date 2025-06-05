@@ -1,12 +1,18 @@
+use rand::Rng;
+use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, IntoActiveModel, QueryFilter, Set,
 };
 
-use models::domains::users;
+use models::domains::{otp, users};
 use models::params::user::{
-    CreateUserParams, LoginUserParams, ResetPasswordBody, UpdateUserParams,
+    CreateUserParams, ForgotPasswordBody, LoginUserParams, ResetPasswordBody, UpdateUserParams,
 };
 use models::queries::user::UserQuery;
+
+use chrono::{TimeDelta, Utc};
+
+use crate::state::AppState;
 
 pub async fn create_user(
     db: &DbConn,
@@ -36,7 +42,7 @@ pub async fn update_user(
     id: i32,
     params: UpdateUserParams,
 ) -> Result<users::Model, DbErr> {
-    let mut update_query = users::Entity::update_many().filter(users::Column::Id.eq(&id));
+    let mut update_query = users::Entity::update_many().filter(users::Column::Id.eq(id));
 
     if let Some(username) = params.username {
         update_query = update_query.col_expr(
@@ -84,6 +90,47 @@ pub async fn login_user(
     Ok(user)
 }
 
+pub async fn forgot_password(
+    state: &AppState,
+    body: ForgotPasswordBody,
+) -> Result<models::domains::otp::Model, anyhow::Error> {
+    let db = &state.conn;
+    let email = body.email.trim().to_lowercase();
+
+    let user = users::Entity::find()
+        .filter(users::Column::Email.eq(email.clone()))
+        .one(db)
+        .await?;
+
+    if user.is_none() {
+        return Err(anyhow::anyhow!("User not found"));
+    }
+
+    if let Some(existing_otp) = otp::Entity::find_by_id(email.clone()).one(db).await? {
+        return Ok(existing_otp);
+    }
+
+    let mut rng = StdRng::from_os_rng();
+
+    let otp_value = rng.random_range(100000..1000000);
+
+    let otp = models::domains::otp::Model {
+        email: email.clone(),
+        otp: otp_value,
+        created_at: Utc::now().fixed_offset(),
+    };
+
+    let otp_model = otp::ActiveModel {
+        email: Set(email.clone()),
+        otp: Set(otp_value),
+        created_at: Set(otp.created_at),
+    };
+
+    otp_model.insert(db).await?;
+
+    Ok(otp)
+}
+
 pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<String, DbErr> {
     use chrono::Utc;
     use models::domains::otp;
@@ -109,11 +156,7 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
         txn.rollback().await?;
         return Err(DbErr::Custom("OTP incorrect".to_string()));
     }
-    if now
-        .signed_duration_since(otp_record.created_at)
-        .num_minutes()
-        > 10
-    {
+    if now.signed_duration_since(otp_record.created_at) > TimeDelta::minutes(10) {
         txn.rollback().await?;
         return Err(DbErr::Custom("OTP expired".to_string()));
     }
