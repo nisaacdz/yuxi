@@ -17,9 +17,24 @@ pub struct LoginUserParams {
     pub password: String,
 }
 
-// update later with more fields
 #[derive(Deserialize, Validate)]
 pub struct UpdateUserParams {
     #[validate(length(min = 2))]
     pub username: Option<String>,
+}
+
+#[derive(Deserialize, Validate)]
+pub struct ResetPasswordBody {
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 6, max = 6))]
+    pub otp: String,
+    #[validate(length(min = 8))]
+    pub password: String,
+}
+
+#[derive(Deserialize, Validate)]
+pub struct ForgotPasswordBody {
+    #[validate(email)]
+    pub email: String,
 }

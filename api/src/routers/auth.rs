@@ -8,6 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
+use models::params::user::{ForgotPasswordBody, ResetPasswordBody};
 use models::schemas::user::{ClientSchema, LoginSchema, TokensSchema};
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
@@ -88,9 +89,39 @@ pub async fn me_get(
     Ok(Json(response))
 }
 
+#[axum::debug_handler]
+pub async fn forgot_password_post(
+    State(state): State<AppState>,
+    Json(params): Json<ForgotPasswordBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Involves creating an OTP and sending it to the user's email
+    // No new OTP is created if one already exists
+    // We need to configure the expiration time for the OTP in our Config
+    Err(ApiError::NotImplemented(
+        "Forgot password not implemented".to_string(),
+    ))
+}
+
+#[axum::debug_handler]
+pub async fn reset_password_post(
+    State(state): State<AppState>,
+    Json(body): Json<ResetPasswordBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let result = app::persistence::users::reset_password(&state.conn, body)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(ApiResponse::success(
+        "Password reset successful",
+        Some(result),
+    )))
+}
+
 pub fn create_auth_router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login_post))
         .route("/register", post(register_post))
         .route("/me", get(me_get))
+        .route("/forgot-password", post(forgot_password_post))
+        .route("/reset-password", post(reset_password_post))
 }

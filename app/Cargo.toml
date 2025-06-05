@@ -14,3 +14,4 @@ chrono = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
+lettre = { workspace = true, features = ["tokio1"] }

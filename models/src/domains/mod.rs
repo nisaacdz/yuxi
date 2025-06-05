@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod completed_sessions;
+pub mod otp;
 pub mod sea_orm_active_enums;
 pub mod texts;
 pub mod tournaments;

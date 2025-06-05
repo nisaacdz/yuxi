@@ -1,13 +1,16 @@
 use jsonwebtoken::{DecodingKey, EncodingKey};
+use lettre::{AsyncSmtpTransport, Tokio1Executor, transport::smtp::authentication::Credentials};
 use std::{ops::Deref, sync::Arc};
 pub struct ConfigInner {
     pub db_url: String,
     pub host: String,
     pub port: u16,
     pub allowed_origin: String,
-    pub prefork: bool,
+    // pub prefork: bool,
     pub encoding_key: EncodingKey,
     pub decoding_key: DecodingKey,
+    pub emailer: String,
+    pub transponder: AsyncSmtpTransport<Tokio1Executor>,
 }
 
 #[derive(Clone)]
@@ -34,7 +37,15 @@ impl Config {
                     .expect("JWT_SECRET is not set in .env file")
                     .as_bytes(),
             ),
-            prefork: std::env::var("PREFORK").is_ok_and(|v| v == "1"),
+            emailer: std::env::var("EMAILER").expect("EMAILER is not set in .env file"),
+            transponder: AsyncSmtpTransport::<Tokio1Executor>::relay(
+                &std::env::var("SMTP_HOST").expect("SMTP_HOST is not set in .env file"),
+            )
+            .credentials(Credentials::new(
+                std::env::var("SMTP_USER").expect("SMTP_USER is not set in .env file"),
+                std::env::var("SMTP_PASS").expect("SMTP_PASS is not set in .env file"),
+            ))
+            .build(),
         };
 
         Self(Arc::new(v))
