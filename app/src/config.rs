@@ -38,7 +38,7 @@ impl Config {
                     .as_bytes(),
             ),
             emailer: std::env::var("EMAILER").expect("EMAILER is not set in .env file"),
-            transponder: AsyncSmtpTransport::<Tokio1Executor>::relay(
+            transponder: AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(
                 &std::env::var("SMTP_HOST").expect("SMTP_HOST is not set in .env file"),
             )
             .expect("Failed to create SMTP transport")

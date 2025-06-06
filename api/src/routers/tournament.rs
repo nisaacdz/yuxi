@@ -22,20 +22,23 @@ async fn tournaments_post(
     Extension(client): Extension<ClientSchema>,
     Valid(Json(params)): Valid<Json<CreateTournamentParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    match client.user {
-        Some(user) => {
-            let tournament = create_tournament(&state.conn, params, &user)
-                .await
-                .map_err(ApiError::from)?;
+    let user = match client.user {
+        Some(user) => user,
+        None => return Err(ApiError::from(anyhow!("Unauthorized"))),
+    };
 
-            let tournament = tournament.try_into_model().unwrap();
-            Ok((
-                StatusCode::CREATED,
-                Json(TournamentSchema::from(tournament)),
-            ))
-        }
-        None => Err(ApiError::from(anyhow!("Unauthorized"))),
-    }
+    let tournament = create_tournament(&state.conn, params, &user)
+        .await
+        .map_err(ApiError::from)?;
+
+    let tournament = tournament.try_into_model().unwrap();
+
+    let result = ApiResponse::success(
+        "Tournament created successfully",
+        Some(TournamentSchema::from(tournament)),
+    );
+
+    Ok(Json(result))
 }
 
 #[axum::debug_handler]
