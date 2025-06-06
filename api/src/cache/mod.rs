@@ -64,6 +64,10 @@ impl<T> Cache<T> {
         let conn = self.get_connection();
         conn.keys().cloned().collect()
     }
+
+    pub fn count(&self) -> usize {
+        self.get_connection().len()
+    }
 }
 
 impl<T: Clone> Cache<T> {
@@ -107,9 +111,7 @@ impl TournamentRegistry {
             .get_or_insert(&tournament_id, || Arc::new(with()))
     }
 
-    /// For managers auto removing themselves
-    /// when the tournament is over.
-    pub fn drop(&self, tournament_id: &str) -> Option<Arc<TournamentManager>> {
+    pub fn evict(&self, tournament_id: &str) -> Option<Arc<TournamentManager>> {
         self.registry.delete_data(tournament_id)
     }
 }

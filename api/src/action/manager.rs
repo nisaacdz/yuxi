@@ -69,14 +69,31 @@ impl TournamentManager {
             let task_tournament_id = tournament.id.to_string();
             let tournament_state = tournament_state.clone();
             let task_scheduled_for = tournament.scheduled_for;
+            let participants = participants.clone();
+            let tournament_registry = tournament_registry.clone();
+            let io = io.clone();
 
             let task = async move {
                 info!(
                     "Scheduled task running for tournament {}",
-                    task_tournament_id
+                    &task_tournament_id
                 );
-                let mut tlck = tournament_state.lock().await;
-                tlck.started_at = Some(Utc::now());
+                if participants.count() > 0 {
+                    let mut tlck = tournament_state.lock().await;
+                    tlck.started_at = Some(Utc::now());
+                    // emit tournament start event to the room
+                    info!(
+                        "Starting tournament {} with {} participants",
+                        &task_tournament_id,
+                        participants.count()
+                    );
+                    io.to(task_tournament_id)
+                        .emit("tournament:start", &*tlck)
+                        .await
+                        .expect("Failed to emit tournament start event");
+                } else {
+                    Self::cleanup(tournament_registry, &task_tournament_id);
+                }
             };
 
             let tournament_id = tournament.id.clone();
@@ -327,29 +344,8 @@ impl TournamentManager {
         }
     }
 
-    // TODO: Add cleanup logic if needed (e.g., when tournament ends, remove from registry)
-    // pub async fn cleanup(self: &Arc<Self>, registry: TournamentRegistry) {
-    //     info!("Cleaning up manager for tournament {}", self.tournament_id);
-    //     // Cancel scheduled task if still running?
-    //     if let Some(handle) = self.scheduler_handle.lock().unwrap().take() {
-    //         handle.abort();
-    //     }
-    //     // Remove from registry
-    //     let mut reg = registry.lock().await;
-    //     reg.remove(&self.tournament_id);
-    //     // Disconnect remaining sockets?
-    //     // let sockets = self.sockets.lock().await;
-    //     // for socket in sockets.values() { let _ = socket.disconnect(); }
-    // }
+    pub fn cleanup(tournament_registry: TournamentRegistry, tournament_id: &str) {
+        info!("Cleaning up manager for tournament {}", tournament_id);
+        tournament_registry.evict(tournament_id);
+    }
 }
-
-// Ensure the manager cleans up if dropped (though explicit cleanup might be better)
-// impl Drop for TournamentManager {
-//     fn drop(&mut self) {
-//         info!("Dropping TournamentManager for {}", self.tournament_id);
-//         // Abort task if handle exists and isn't None
-//         if let Some(handle) = self.scheduler_handle.lock().unwrap().as_ref() {
-//             handle.abort();
-//         }
-//     }
-// }
