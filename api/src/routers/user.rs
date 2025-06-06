@@ -84,5 +84,5 @@ pub fn create_user_router() -> Router<AppState> {
         .route("/", post(users_post).get(users_get))
         .route("/{id}", get(users_id_get))
         .route("/me", get(me_get))
-        .route("/me/update", patch(current_user_update))
+        .route("/me", patch(current_user_update))
 }
