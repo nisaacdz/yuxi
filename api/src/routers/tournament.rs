@@ -1,10 +1,15 @@
 use anyhow::anyhow;
 use axum::{
-    extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Extension, Router
+    Extension, Router,
+    extract::{Path, Query, State},
+    response::IntoResponse,
+    routing::{get, post},
 };
 use sea_orm::TryIntoModel;
 
-use app::persistence::tournaments::{create_tournament, get_tournament, search_upcoming_tournaments};
+use app::persistence::tournaments::{
+    create_tournament, get_tournament, search_upcoming_tournaments,
+};
 use app::state::AppState;
 use models::queries::PaginationQuery;
 use models::schemas::tournament::TournamentSchema;
@@ -52,12 +57,14 @@ async fn tournaments_get(
 }
 
 #[axum::debug_handler]
-async fn tournaments_id_get(state: State<AppState>, Path(id): Path<String>) -> Result<impl IntoResponse, ApiError> {
+async fn tournaments_id_get(
+    state: State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
     let result = get_tournament(&state.conn, id)
         .await
-        .map_err(ApiError::from)?.ok_or_else(|| {
-            ApiError::from(anyhow!("Tournament not found"))
-        })?;
+        .map_err(ApiError::from)?
+        .ok_or_else(|| ApiError::from(anyhow!("Tournament not found")))?;
 
     let response = ApiResponse::success("Tournament retrieved Successfully", Some(result));
 
