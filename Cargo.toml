@@ -56,7 +56,6 @@ axum = { workspace = true, features = ["tokio", "http1", "http2"] }
 bcrypt = { workspace = true }
 
 # External dependencies
-prefork = { version = "0.5.1", default-features = false, optional = true }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 redis = { version = "0.29.2", features = ["tokio-comp"] }
 tower-http = "0.6.2"
@@ -75,6 +74,5 @@ http-body-util = "0.1.3"
 serde_json = { workspace = true }
 
 [features]
-default = ["prefork"]
-prefork = ["prefork/tokio"]
+default = []
 shuttle = ["shuttle-axum", "shuttle-runtime", "shuttle-shared-db"]
