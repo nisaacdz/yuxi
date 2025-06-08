@@ -14,6 +14,8 @@ use chrono::{TimeDelta, Utc};
 
 use crate::state::AppState;
 
+const OTP_DURATION: TimeDelta = TimeDelta::minutes(10);
+
 pub async fn create_user(
     db: &DbConn,
     params: CreateUserParams,
@@ -94,6 +96,7 @@ pub async fn forgot_password(
     state: &AppState,
     body: ForgotPasswordBody,
 ) -> Result<models::domains::otp::Model, anyhow::Error> {
+    let now = Utc::now();
     let db = &state.conn;
     let email = body.email.trim().to_lowercase();
 
@@ -106,8 +109,15 @@ pub async fn forgot_password(
         return Err(anyhow::anyhow!("User not found"));
     }
 
-    if let Some(existing_otp) = otp::Entity::find_by_id(email.clone()).one(db).await? {
-        return Ok(existing_otp);
+    match otp::Entity::find_by_id(email.clone()).one(db).await? {
+        Some(existing_otp) if now.signed_duration_since(existing_otp.created_at) <= OTP_DURATION => {
+            return Ok(existing_otp);
+        },
+        Some(_) => {
+            // If OTP exists but is expired, delete it
+            otp::Entity::delete_by_id(email.clone()).exec(db).await?;
+        },
+        _ => {}
     }
 
     let mut rng = StdRng::from_os_rng();
@@ -156,7 +166,7 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
         txn.rollback().await?;
         return Err(DbErr::Custom("OTP incorrect".to_string()));
     }
-    if now.signed_duration_since(otp_record.created_at) > TimeDelta::minutes(10) {
+    if now.signed_duration_since(otp_record.created_at) > OTP_DURATION {
         txn.rollback().await?;
         return Err(DbErr::Custom("OTP expired".to_string()));
     }
