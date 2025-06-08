@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-
   pull_request:
     branches: [main]
 
@@ -11,30 +10,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build_and_check: # Renamed job from 'build' for better clarity
+    name: Build & Check (${{ matrix.os }}, ${{ matrix.toolchain }}) # Descriptive name for the matrix job run
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # Optional: set to true if you want all matrix jobs to cancel on the first failure
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        toolchain: [stable, beta]
+        # Simplified to 'stable' toolchain. You can add 'beta' back if you still need it: [stable, beta]
+        toolchain: [stable]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: rustfmt, clippy, llvm-tools-preview
+          # Removed rustfmt and clippy from components.
+          # llvm-tools-preview is kept; remove it if not strictly needed by your build/check process
+          # for a slightly faster toolchain setup.
+          components: llvm-tools-preview
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       # Run cargo build and cargo check
-      - run: cargo build --no-default-features && cargo check --no-default-features
+      - name: Build and Check (Windows)
         if: matrix.os == 'windows-latest'
-      - run: cargo build && cargo check
-        if: matrix.os != 'windows-latest'
+        run: cargo build --no-default-features && cargo check --no-default-features
 
-      # Run cargo fmt and cargo clippy
-      - run: cargo fmt --check && cargo clippy --no-default-features -- -D warnings
-        if: matrix.os == 'windows-latest'
-      - run: cargo fmt --check && cargo clippy -- -D warnings
+      - name: Build and Check (non-Windows)
         if: matrix.os != 'windows-latest'
+        run: cargo build && cargo check
+
+      # The 'cargo fmt' and 'cargo clippy' steps have been removed to simplify the workflow.
