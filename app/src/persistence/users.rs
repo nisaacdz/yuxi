@@ -110,9 +110,13 @@ pub async fn forgot_password(
     }
 
     match otp::Entity::find_by_id(email.clone()).one(db).await? {
-        Some(existing_otp) if now.signed_duration_since(existing_otp.created_at) > OTP_DURATION => {
+        Some(existing_otp) if now.signed_duration_since(existing_otp.created_at) <= OTP_DURATION => {
             return Ok(existing_otp);
-        }
+        },
+        Some(_) => {
+            // If OTP exists but is expired, delete it
+            otp::Entity::delete_by_id(email.clone()).exec(db).await?;
+        },
         _ => {}
     }
 
