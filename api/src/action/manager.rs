@@ -152,12 +152,17 @@ impl TournamentManager {
                         < TimeDelta::from_std(JOIN_DEADLINE).unwrap())
             {
                 error!(client_id = %client.id, "Tournament {} has already started or is not scheduled.", self.tournament_id);
-                let _ = socket.emit(
+                let k = socket.emit(
                     "join:response",
                     &ApiResponse::<()>::error(
                         "Tournament has already started or is not scheduled.",
                     ),
                 );
+
+                if let Err(e) = k {
+                    warn!("Failed to send join response to {}: {}", client.id, e);
+                }
+
                 return Err(anyhow::anyhow!(
                     "Tournament has already started or is not scheduled."
                 ));
@@ -181,9 +186,16 @@ impl TournamentManager {
             TypingSessionSchema::new(client.clone(), tournament_id.to_string()),
         );
 
+        socket.join(tournament_id.to_string());
+
         self.broadcast_tournament_update().await;
 
         self.register_socket_listeners(socket.clone());
+
+        info!(
+            "Client {} connected to tournament {}",
+            &client.id, tournament_id
+        );
 
         Ok(())
     }
