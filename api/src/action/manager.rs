@@ -32,7 +32,7 @@ const MAX_PROCESS_STACK_SIZE: usize = 15;
 
 #[derive(Clone)]
 pub struct TournamentManager {
-    tournament_id: String,
+    tournament_id: Arc<String>,
     tournament_state: Arc<tokio::sync::Mutex<TournamentSession>>,
     participants: Cache<TypingSessionSchema>,
     io: SocketIo,
@@ -127,7 +127,7 @@ impl TournamentManager {
         };
 
         Self {
-            tournament_id: tournament.id.to_string(),
+            tournament_id: Arc::new(tournament.id.to_string()),
             tournament_state,
             participants,
             io,
@@ -172,13 +172,13 @@ impl TournamentManager {
         );
 
         self.participants.get_or_insert(&client.id, || {
-            TypingSessionSchema::new(client.clone(), tournament_id.clone())
+            TypingSessionSchema::new(client.clone(), tournament_id.to_string())
         });
 
         // Great!, this will set the global session registry so that the newest session is added
         self.session_registry.set_session(
             &client.id,
-            TypingSessionSchema::new(client.clone(), tournament_id.clone()),
+            TypingSessionSchema::new(client.clone(), tournament_id.to_string()),
         );
 
         self.broadcast_tournament_update().await;
@@ -290,12 +290,12 @@ impl TournamentManager {
                 client_id, self.tournament_id
             );
 
-            socket.leave(self.tournament_id.clone());
+            socket.leave(self.tournament_id.to_string());
 
             let user_data = session.client;
             if let Err(e) = self
                 .io
-                .to(self.tournament_id.clone())
+                .to(self.tournament_id.to_string())
                 .emit("user:left", &user_data)
                 .await
             {
@@ -331,7 +331,7 @@ impl TournamentManager {
 
         if let Err(e) = self
             .io
-            .to(self.tournament_id.clone())
+            .to(self.tournament_id.to_string())
             .emit("tournament:update", &update_payload)
             .await
         {
