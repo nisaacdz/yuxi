@@ -13,7 +13,7 @@ enum State {
 }
 
 // --- Inner Struct for Moderator ---
-struct GenericInner<F, Fut>
+struct Inner<F, Fut>
 where
     F: FnOnce() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
@@ -37,7 +37,7 @@ where
     F: FnOnce() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    inner: Arc<Mutex<GenericInner<F, Fut>>>,
+    inner: Arc<Mutex<Inner<F, Fut>>>,
     debounce_duration: Duration,
     max_process_wait: Duration,
     /// If the number of pending calls reaches or exceeds this, execution is scheduled immediately (skipping debounce).
@@ -64,7 +64,7 @@ where
         }
 
         Self {
-            inner: Arc::new(Mutex::new(GenericInner {
+            inner: Arc::new(Mutex::new(Inner {
                 pending_calls_count: 0,
                 next_processor: None,
                 state: State::Idle,
@@ -77,7 +77,7 @@ where
         }
     }
 
-    fn should_execute_immediately(&self, inner_data: &GenericInner<F, Fut>) -> bool {
+    fn should_execute_immediately(&self, inner_data: &Inner<F, Fut>) -> bool {
         if inner_data.pending_calls_count >= self.max_pending_calls {
             return true;
         }
@@ -138,7 +138,7 @@ where
 }
 
 fn spawn_generic_processing_task<F, Fut>(
-    inner_mutex: Arc<Mutex<GenericInner<F, Fut>>>,
+    inner_mutex: Arc<Mutex<Inner<F, Fut>>>,
     processor_for_this_task: F, // The FnOnce() -> Fut
     should_sleep: bool,
     debounce_duration: Duration,
