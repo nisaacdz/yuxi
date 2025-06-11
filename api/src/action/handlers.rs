@@ -1,5 +1,5 @@
 use crate::ApiResponse;
-use crate::cache::Cache;
+use app::cache::Cache;
 
 use chrono::{DateTime, Utc};
 use models::schemas::{typing::TypingSessionSchema, user::ClientSchema};

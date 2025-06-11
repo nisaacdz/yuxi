@@ -19,8 +19,10 @@ use crate::{
         handlers::{handle_timeout, handle_typing},
         moderation::FrequencyMonitor,
     },
-    cache::{Cache, TournamentRegistry, TypingSessionRegistry},
+    cache::{TournamentRegistry, TypingSessionRegistry},
 };
+
+use app::cache::Cache;
 
 use crate::{ApiResponse, action::timeout::TimeoutMonitor};
 
