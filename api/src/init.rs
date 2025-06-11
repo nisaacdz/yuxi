@@ -65,14 +65,12 @@ pub fn setup_config() -> Config {
     Config::from_env()
 }
 
-pub async fn setup_db(db_url: &str, prefork: bool) -> DatabaseConnection {
+pub async fn setup_db(db_url: &str) -> DatabaseConnection {
     let mut opt = ConnectOptions::new(db_url);
     opt.max_lifetime(std::time::Duration::from_secs(60));
 
-    if !prefork {
-        opt.min_connections(10).max_connections(100);
-    }
-
+    opt.min_connections(10).max_connections(100);
+    
     Database::connect(opt)
         .await
         .expect("Database connection failed")
