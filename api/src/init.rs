@@ -35,20 +35,20 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         )
         .allow_credentials(true);
 
+    let app_state = AppState { conn, config };
+
     let (socket_layer, io) = SocketIo::new_layer();
 
     {
-        let conn = conn.clone();
+        let app_state = app_state.clone();
         io.ns("/", async move |socket: SocketRef| {
             tracing::info!("default namespace reached: {}", socket.id)
         });
         let tournament_registry = TournamentRegistry::new();
         let typing_sessions = TypingSessionRegistry::new();
 
-        register_tournament_namespace(io, conn, tournament_registry, typing_sessions);
+        register_tournament_namespace(io, app_state, tournament_registry, typing_sessions);
     }
-
-    let app_state = AppState { conn, config };
 
     create_router(app_state.clone())
         .layer(TraceLayer::new_for_http())
@@ -70,7 +70,7 @@ pub async fn setup_db(db_url: &str) -> DatabaseConnection {
     opt.max_lifetime(std::time::Duration::from_secs(60));
 
     opt.min_connections(10).max_connections(100);
-    
+
     Database::connect(opt)
         .await
         .expect("Database connection failed")

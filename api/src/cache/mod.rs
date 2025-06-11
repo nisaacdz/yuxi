@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use app::cache::Cache;
+use std::sync::Arc;
 
 use models::schemas::typing::TypingSessionSchema;
 

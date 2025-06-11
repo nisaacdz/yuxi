@@ -1,5 +1,5 @@
+use app::state::AppState;
 use models::schemas::user::ClientSchema;
-use sea_orm::DatabaseConnection;
 use socketioxide::SocketIo;
 use socketioxide::extract::SocketRef;
 use tracing::{error, info, warn};
@@ -9,7 +9,7 @@ use crate::cache::{TournamentRegistry, TypingSessionRegistry};
 
 pub fn register_tournament_namespace(
     io: SocketIo,
-    conn: DatabaseConnection,
+    app_state: AppState,
     tournament_registry: TournamentRegistry,
     session_registry: TypingSessionRegistry,
 ) {
@@ -37,7 +37,7 @@ pub fn register_tournament_namespace(
         };
 
         let registry = tournament_registry.clone();
-        let conn = conn.clone();
+        let app_state = app_state.clone();
         let socket = socket.clone();
 
         let client = match socket.req_parts().extensions.get::<ClientSchema>() {
@@ -57,24 +57,29 @@ pub fn register_tournament_namespace(
             tournament_id, client.id
         );
 
-        let tournament =
-            match app::persistence::tournaments::get_tournament(&conn, tournament_id.clone()).await
-            {
-                Ok(Some(tournament)) => tournament,
-                Ok(None) => {
-                    error!("Tournament with ID '{}' not found", tournament_id);
-                    let _ = socket.disconnect();
-                    return;
-                }
-                Err(e) => {
-                    error!("Error fetching tournament '{}': {}", tournament_id, e);
-                    let _ = socket.disconnect();
-                    return;
-                }
-            };
+        let tournament = match app::persistence::tournaments::get_tournament(
+            &app_state.conn,
+            tournament_id.clone(),
+        )
+        .await
+        {
+            Ok(Some(tournament)) => tournament,
+            Ok(None) => {
+                error!("Tournament with ID '{}' not found", tournament_id);
+                let _ = socket.disconnect();
+                return;
+            }
+            Err(e) => {
+                error!("Error fetching tournament '{}': {}", tournament_id, e);
+                let _ = socket.disconnect();
+                return;
+            }
+        };
 
         let typing_text =
-            match app::persistence::text::get_or_generate_text(&conn, &tournament.id).await {
+            match app::persistence::text::get_or_generate_text(&app_state.conn, &tournament.id)
+                .await
+            {
                 Ok(text) => text,
                 Err(e) => {
                     error!(
@@ -90,7 +95,7 @@ pub fn register_tournament_namespace(
             TournamentManager::new(
                 tournament,
                 typing_text,
-                conn.clone(),
+                app_state.conn.clone(),
                 io,
                 session_registry.clone(),
                 tournament_registry.clone(),
