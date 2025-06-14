@@ -903,10 +903,8 @@ impl TournamentManager {
                 "Leave/disconnect for client {} but no session found in tournament {}.",
                 client_id_str, self.inner.tournament_id
             );
-            let failure_payload = WsFailurePayload::new(
-                2210,
-                "You are not currently in this tournament session.",
-            );
+            let failure_payload =
+                WsFailurePayload::new(2210, "You are not currently in this tournament session.");
             if socket.emit("leave:failure", &failure_payload).is_err() {
                 warn!(
                     "Failed to send leave:failure to {}: {}",

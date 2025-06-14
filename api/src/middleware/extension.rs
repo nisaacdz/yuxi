@@ -1,12 +1,12 @@
 use app::{state::AppState, utils::decode_data};
 use axum::{
     extract::{Request, State},
+    http::{HeaderName, HeaderValue},
     middleware::Next,
     response::Response,
 };
 use chrono::Utc;
 use models::schemas::user::ClientSchema;
-use tracing;
 use uuid::Uuid;
 
 use crate::error::ApiError;
@@ -30,36 +30,36 @@ pub async fn client_extension(
             }
         });
 
-    let client_session = match token {
-        Some(token) => {
-            match decode_data::<ClientSchema>(&state.config, token) {
-                Ok(client) => {
-                    tracing::trace!("JWT token decoded successfully for client: {}", client.id);
-                    client
-                }
-                Err(e) => {
-                    tracing::debug!("Invalid JWT token: {:?}", e);
-                    // Create anonymous session for invalid/expired tokens
-                    ClientSchema {
-                        id: Uuid::new_v4().to_string(),
-                        user: None,
-                        updated: Utc::now(),
-                    }
-                }
-            }
-        }
-        None => {
-            tracing::trace!("No JWT token found, creating anonymous session");
-            // Create anonymous session when no token provided
-            ClientSchema {
-                id: Uuid::new_v4().to_string(),
-                user: None,
-                updated: Utc::now(),
-            }
-        }
-    };
+    let client_session = token
+        .map(|token| decode_data::<ClientSchema>(&state.config, token).ok())
+        .flatten();
+
+    let client_session = client_session.or_else(|| {
+        let x_client_id = headers
+            .get("X-Client-ID")
+            .and_then(|header| header.to_str().ok())
+            .map(|v| Uuid::parse_str(v).ok())
+            .flatten();
+
+        x_client_id.map(|client_id| ClientSchema::from_id(client_id.to_string()))
+    });
+
+    let client_session = client_session.unwrap_or_else(|| ClientSchema {
+        id: Uuid::new_v4().to_string(),
+        user: None,
+        updated: Utc::now(),
+    });
+
+    let client_id = &client_session.id;
+
+    let header_value = HeaderValue::from_str(client_id).unwrap();
 
     req.extensions_mut().insert(client_session);
 
-    Ok(next.run(req).await)
+    let mut res = next.run(req).await;
+
+    res.headers_mut()
+        .insert(HeaderName::from_static("X-Client-ID"), header_value);
+
+    Ok(res)
 }
