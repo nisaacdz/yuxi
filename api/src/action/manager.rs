@@ -35,6 +35,7 @@ const MAX_PROCESS_STACK_SIZE: usize = 15;
 #[derive(Clone)]
 pub struct TournamentManager {
     tournament_id: Arc<String>,
+    tournament: TournamentSchema,
     tournament_state: Arc<tokio::sync::Mutex<TournamentSession>>,
     participants: Cache<TypingSessionSchema>,
     io: SocketIo,
@@ -130,6 +131,7 @@ impl TournamentManager {
 
         Self {
             tournament_id: Arc::new(tournament.id.to_string()),
+            tournament,
             tournament_state,
             participants,
             io,
@@ -190,6 +192,8 @@ impl TournamentManager {
 
         socket.join(tournament_id.to_string());
 
+        socket.emit("join:response", &ApiResponse::success("Joined successfully", Some(&self.tournament))).ok();
+
         self.broadcast_tournament_update().await;
 
         self.register_socket_listeners(socket.clone());
@@ -206,8 +210,8 @@ impl TournamentManager {
         let tournament_id = &self.tournament_id;
         let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
         info!(
-            "Socket.IO connected to dynamic namespace {} : {:?}",
-            tournament_id, client
+            "Socket.IO connected to tournament {} : {:?}",
+            tournament_id, client.id
         );
 
         {

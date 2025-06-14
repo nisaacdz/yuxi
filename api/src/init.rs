@@ -9,7 +9,6 @@ use crate::routers::create_router;
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
-use socketioxide::extract::SocketRef;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
@@ -41,9 +40,6 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 
     {
         let app_state = app_state.clone();
-        io.ns("/", async move |socket: SocketRef| {
-            tracing::info!("default namespace reached: {}", socket.id)
-        });
         let tournament_registry = TournamentRegistry::new();
         let typing_sessions = TypingSessionRegistry::new();
 

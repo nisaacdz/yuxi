@@ -13,7 +13,7 @@ pub fn register_tournament_namespace(
     tournament_registry: TournamentRegistry,
     session_registry: TypingSessionRegistry,
 ) {
-    let _ = io.clone().ns("/comp", async move |socket: SocketRef| {
+    let _ = io.clone().ns("/", async move |socket: SocketRef| {
         let tournament_id = socket.req_parts().uri.query().and_then(|q| {
             q.split('&').find_map(|pair| {
                 let mut parts = pair.splitn(2, '=');
