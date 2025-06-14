@@ -9,8 +9,9 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub title: String,
+    pub description: String,
     pub created_at: DateTimeWithTimeZone,
-    pub created_by: i32,
+    pub created_by: String,
     pub scheduled_for: DateTimeWithTimeZone,
     pub started_at: Option<DateTimeWithTimeZone>,
     pub privacy: TournamentPrivacy,

@@ -10,8 +10,9 @@ use super::{text::TextOptions, user::UserSchema};
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,
+    pub description: String,
     pub created_at: DateTimeUtc,
-    pub created_by: i32,
+    pub created_by: String,
     pub scheduled_for: DateTimeUtc,
     pub joined: i32,
     pub privacy: TournamentPrivacy,
@@ -24,6 +25,7 @@ impl From<tournaments::Model> for TournamentSchema {
         Self {
             id: tournament.id,
             title: tournament.title,
+            description: tournament.description,
             created_at: tournament.created_at.to_utc(),
             created_by: tournament.created_by,
             scheduled_for: tournament.scheduled_for.to_utc(),

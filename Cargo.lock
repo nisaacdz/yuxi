@@ -155,6 +155,7 @@ dependencies = [
  "tower-http",
  "tower-sessions",
  "tracing",
+ "url",
  "uuid",
  "validator",
 ]

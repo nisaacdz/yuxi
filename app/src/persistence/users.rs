@@ -41,7 +41,7 @@ pub async fn create_user(
 
 pub async fn update_user(
     db: &DbConn,
-    id: i32,
+    id: &str,
     params: UpdateUserParams,
 ) -> Result<users::Model, DbErr> {
     let mut update_query = users::Entity::update_many().filter(users::Column::Id.eq(id));
@@ -70,7 +70,7 @@ pub async fn search_users(db: &DbConn, query: UserQuery) -> Result<Vec<users::Mo
         .await
 }
 
-pub async fn get_user(db: &DbConn, id: i32) -> Result<Option<users::Model>, DbErr> {
+pub async fn get_user(db: &DbConn, id: &str) -> Result<Option<users::Model>, DbErr> {
     users::Entity::find_by_id(id).one(db).await
 }
 

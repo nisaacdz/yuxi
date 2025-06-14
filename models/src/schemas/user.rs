@@ -18,7 +18,7 @@ impl ClientSchema {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserSchema {
-    pub id: i32,
+    pub id: String,
     pub username: String,
     pub email: String,
 }
