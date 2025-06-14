@@ -388,7 +388,7 @@ export type LeaveSuccessPayload = {
     - Initially populated from `JoinSuccessPayload.participants` or `AllSuccessPayload`.
     - The key for the record will be the `client.id` from `ParticipantData`.
     - Must be updated after each `update:all` event.
-    - Must be manually updated after `member:left` (remove entry) and `member:joined` (add entry), as there will not necessarily be an `update:all` for these specific cases.
+    - Must be manually updated after `member:left` (remove entry) and `member:joined` (add entry), as there will not be an `update:all` event for these cases.
     - For participants, it must be updated after every `update:me` event unless the implementation separates `me` data, in which case `me` will be updated separately and `participants` may catch up with a subsequent `update:all` event.
 
 2.  **`data`: `TournamentData`**
@@ -410,7 +410,7 @@ export type LeaveSuccessPayload = {
 
 ### Additional State Considerations
 
-- `TournamentData.text` and `TournamentData.startedAt` will typically be set (or updated from `null`) simultaneously when a tournament officially starts, often via an `update:data` event.
+- `TournamentData.text` and `TournamentData.startedAt` will simultaneously be set (updated to **non null** values) when the tournament starts, via an `update:data` event.
 - The server may process multiple successive `type` events from a participant together and reflect the cumulative updates in a single `update:me` event.
 
 ### WebSocket Implementation Notes
@@ -423,9 +423,9 @@ export type LeaveSuccessPayload = {
 
 - Reconnecting with the socket after a disconnect should allow the client to recover its previous state and data upon a successful `join:success`.
 - Reconnecting logic should always await `join:success` and update relevant client-side state variables.
-- All **pollable events** can be retried by the client any number of times if a response is not received (e.g., due to timeout or transient network issues).
+- All **pollable events** can be retried by the client any number of times.
 
-(**Pollable events** follow the pattern: client fires `{eventName}` and expects the server to respond with `{eventName}:success` or `{eventName}:failure`. They can be implemented as promises that resolve or reject after the server responds or a timeout occurs.)
+(**Pollable events** follow the pattern: client fires `{eventName}` and expects the server to respond with `{eventName}:success` or `{eventName}:failure`. They can be implemented as promises that resolve after the server responds.)
 
 ---
 
@@ -447,7 +447,7 @@ Clients can join tournaments as non-participating spectators.
 ### Server-Side Handling of Spectators
 
 - Spectator sockets are added to the same WebSocket **room** as participants to receive broadcast events.
-- The server **will not have listeners for certain client-sent events from spectator sockets**, specifically:
+- The server-side logic for spectator sockets **will not have listeners for certain client-sent**, specifically:
   - `type`: Spectators cannot submit typing data.
   - `me`: Spectators do not have individual participant session data to request.
 - Consequently, spectators will not receive `update:me` events.
