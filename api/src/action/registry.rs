@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use app::state::AppState;
 use models::schemas::user::ClientSchema;
 use socketioxide::SocketIo;
@@ -14,18 +16,12 @@ pub fn register_tournament_namespace(
     session_registry: TypingSessionRegistry,
 ) {
     let _ = io.clone().ns("/", async move |socket: SocketRef| {
-        let tournament_id = socket.req_parts().uri.query().and_then(|q| {
-            q.split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                match (parts.next(), parts.next()) {
-                    (Some("id"), Some(val)) => Some(val.to_string()),
-                    _ => None,
-                }
-            })
-        });
+        let query_string = socket.req_parts().uri.query().unwrap_or_default();
+        let params_map =
+            url::form_urlencoded::parse(query_string.as_bytes()).collect::<HashMap<_, _>>();
 
-        let tournament_id = match tournament_id {
-            Some(id) => id,
+        let tournament_id = match params_map.get("id") {
+            Some(id) => id.clone(),
             None => {
                 error!(
                     "No tournament_id provided in handshake query for socket {}",
@@ -35,6 +31,11 @@ pub fn register_tournament_namespace(
                 return;
             }
         };
+
+        let spectator: bool = params_map
+            .get("spectator")
+            .and_then(|val_str| val_str.parse::<bool>().ok())
+            .unwrap_or(false);
 
         let registry = tournament_registry.clone();
         let app_state = app_state.clone();
@@ -59,7 +60,7 @@ pub fn register_tournament_namespace(
 
         let tournament = match app::persistence::tournaments::get_tournament(
             &app_state.conn,
-            tournament_id.clone(),
+            tournament_id.to_string(),
         )
         .await
         {
@@ -91,7 +92,7 @@ pub fn register_tournament_namespace(
                 }
             };
 
-        let manager = registry.get_or_init(tournament_id.to_owned(), move || {
+        let manager = registry.get_or_init(tournament_id.to_string(), move || {
             TournamentManager::new(
                 tournament,
                 typing_text,
@@ -102,7 +103,7 @@ pub fn register_tournament_namespace(
             )
         });
 
-        if let Err(e) = manager.connect(socket.clone()).await {
+        if let Err(e) = manager.connect(socket.clone(), spectator).await {
             warn!("Error handling client connection for {}: {}", client.id, e);
             // Error response already sent within handle_client_connection
             let _ = socket.disconnect();

@@ -50,9 +50,9 @@ async fn users_get(
 
 async fn users_id_get(
     state: State<AppState>,
-    Path(id): Path<i32>,
+    Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = get_user(&state.conn, id).await.map_err(ApiError::from)?;
+    let user = get_user(&state.conn, &id).await.map_err(ApiError::from)?;
 
     user.map(|user| Json(UserSchema::from(user)))
         .ok_or_else(|| UserError::NotFound.into())
@@ -64,7 +64,7 @@ async fn current_user_update(
     Extension(client): Extension<ClientSchema>,
     Valid(Json(params)): Valid<Json<UpdateUserParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user_id = client
+    let user_id = &client
         .user
         .as_ref()
         .ok_or_else(|| anyhow!("User not logged in"))?

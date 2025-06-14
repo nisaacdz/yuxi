@@ -1,5 +1,4 @@
 use app::cache::Cache;
-use std::sync::Arc;
 
 use models::schemas::typing::TypingSessionSchema;
 
@@ -7,7 +6,7 @@ use crate::action::manager::TournamentManager;
 
 #[derive(Clone)]
 pub struct TournamentRegistry {
-    registry: Cache<Arc<TournamentManager>>,
+    registry: Cache<TournamentManager>,
 }
 
 impl TournamentRegistry {
@@ -17,15 +16,14 @@ impl TournamentRegistry {
         }
     }
 
-    pub fn get_or_init<F>(&self, tournament_id: String, with: F) -> Arc<TournamentManager>
+    pub fn get_or_init<F>(&self, tournament_id: String, with: F) -> TournamentManager
     where
         F: FnOnce() -> TournamentManager,
     {
-        self.registry
-            .get_or_insert(&tournament_id, || Arc::new(with()))
+        self.registry.get_or_insert(&tournament_id, || with())
     }
 
-    pub fn evict(&self, tournament_id: &str) -> Option<Arc<TournamentManager>> {
+    pub fn evict(&self, tournament_id: &str) -> Option<TournamentManager> {
         self.registry.delete_data(tournament_id)
     }
 }
