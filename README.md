@@ -11,10 +11,12 @@ This document specifies the WebSocket event structure for client-server communic
     The server may transmit updates to clients without a preceding client request (e.g., `update:me`).
 
 3.  **Tournament Association via Handshake**
-    Clients connect to a specific tournament by including the tournament identifier as the `id` query parameter in the WebSocket connection URL. The server utilizes this `id` to associate the client's socket instance with the designated tournament-specific room. Successful association is confirmed by a `join:success` event; failure results in a `join:failure` event.
+    Clients connect to a specific tournament by including the tournament identifier (`id`) query parameter in the WebSocket connection URL. To join as a **spectator**, an additional `spectator=true` query parameter should be included. The server uses the `id` to associate the client's socket instance with the tournament-specific room.
+    *   Spectator sockets, while in the same room for broadcasts, will not have server-side listeners registered for participant-specific events (e.g., `type`, `me`).
+    *   Successful association is confirmed by a `join:success` event. For spectators, their `ParticipantData` will be absent from the `JoinSuccessPayload.participants` list.
+    *   Failure results in a `join:failure` event.
 
-    _Client-side example snippet for connection:_
-
+    _Client-side example (participant):_
     ```javascript
     const tournamentId = "your_tournament_id";
     const socket = io(namespaceUrl, {
@@ -22,9 +24,17 @@ This document specifies the WebSocket event structure for client-server communic
       // ... other options
     });
     ```
+    _Client-side example (spectator):_
+    ```javascript
+    const tournamentId = "your_tournament_id";
+    const socket = io(namespaceUrl, {
+      query: { id: tournamentId, spectator: "true" },
+      // ... other options
+    });
+    ```
 
 4.  **Error Handling**
-    All payloads for `:failure` events are of the type `WsFailurePayload` which contains error code and message.
+    All payloads for `:failure` events are of the type `WsFailurePayload`, containing an error code and message. For events where a spectator's socket has no server-side listener, client-side requests for such events will not receive an application-level `eventName:success` or `eventName:failure` response, potentially resulting in a client-side timeout if a response is awaited.
 
 ---
 
@@ -32,14 +42,14 @@ This document specifies the WebSocket event structure for client-server communic
 
 Events emitted by the client to the server.
 
-| Event   | Description                                                                  | Payload            | Expected Server Response(s)                                |
-| ------- | ---------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------- |
-| `me`    | Request the client's own typing session data.                                | `{}`               | `me:success`, `me:failure`                                 |
-| `us`    | Request typing session data for all participants in the tournament.          | `{}`               | `us:success`, `us:failure`                                 |
-| `leave` | Notify the server of the client's intent to gracefully leave the tournament. | `{}`               | `leave:success`, `leave:failure`                           |
-| `type`  | Notify the server that the client has typed a character.                     | `TypeEventPayload` | `type:failure` or eventually triggers a `update:me` event. |
-| `data`  | Request comprehensive information about the current tournament.              | `{}`               | `data:success`, `data:failure`                             |
-| `check` | Request a status overview of the tournament.                                 | `{}`               | `check:success`, `check:failure`                           |
+| Event   | Description                                                                  | Payload            | Expected Server Response(s) for Participants                     | Notes for Spectators                                                                 |
+| ------- | ---------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `me`    | Request the client's own typing session data.                                | `{}`               | `me:success`, `me:failure`                                      | No server-side listener. Client will not receive an application-level response.      |
+| `all`   | Request typing session data for all participants in the tournament.          | `{}`               | `all:success`, `all:failure`                                  | Permitted. Server listens and responds.                                              |
+| `leave` | Notify the server of the client's intent to gracefully leave the tournament. | `{}`               | `leave:success`, `leave:failure`                              | Permitted. Server listens and responds.                                              |
+| `type`  | Notify the server that the client has typed a character.                     | `TypeEventPayload` | `type:failure` or eventually triggers an `update:me` event.     | No server-side listener. Client will not receive an application-level response.      |
+| `data`  | Request comprehensive information about the current tournament.              | `{}`               | `data:success`, `data:failure`                                | Permitted. Server listens and responds.                                              |
+| `check` | Request a status overview of the tournament.                                 | `{}`               | `check:success`, `check:failure`                              | Permitted. Server listens and responds.                                              |
 
 ---
 
@@ -49,19 +59,19 @@ Events emitted by the server to client(s).
 
 ### 1. Responses to Client Requests
 
-Sent to a specific client in direct response to their requests.
+Sent to a specific client in direct response to their requests (if a server-side listener for the event and client type exists).
 
 | Event           | Description                                                           | Payload Type          |
 | --------------- | --------------------------------------------------------------------- | --------------------- |
 | `join:success`  | Confirms successful tournament association and provides initial data. | `JoinSuccessPayload`  |
 | `join:failure`  | Indicates failure to associate with the tournament.                   | `WsFailurePayload`    |
-| `me:success`    | Returns the client's typing session data.                             | `MeSuccessPayload`    |
-| `me:failure`    | Indicates an error fetching client's session data.                    | `WsFailurePayload`    |
-| `us:success`    | Returns typing session data for all participants.                     | `UsSuccessPayload`    |
-| `us:failure`    | Indicates an error fetching all participants' data.                   | `WsFailurePayload`    |
+| `me:success`    | Returns the client's typing session data (Participants only).         | `MeSuccessPayload`    |
+| `me:failure`    | Indicates an error fetching client's session data (Participants only).| `WsFailurePayload`    |
+| `all:success`   | Returns typing session data for all participants.                     | `UsSuccessPayload`    |
+| `all:failure`   | Indicates an error fetching all participants' data.                   | `WsFailurePayload`    |
 | `leave:success` | Confirms successful departure from the tournament.                    | `LeaveSuccessPayload` |
 | `leave:failure` | Indicates an error during the leave process.                          | `WsFailurePayload`    |
-| `type:failure`  | Indicates an error processing the `type` event.                       | `WsFailurePayload`    |
+| `type:failure`  | Indicates an error processing the `type` event (Participants only).   | `WsFailurePayload`    |
 | `data:success`  | Returns comprehensive tournament information.                         | `DataSuccessPayload`  |
 | `data:failure`  | Indicates an error fetching tournament information                    | `WsFailurePayload`    |
 | `check:success` | Returns the current status of the tournament.                         | `CheckSuccessPayload` |
@@ -71,31 +81,33 @@ Sent to a specific client in direct response to their requests.
 
 Pushed by the server. Payloads represent partial data from their corresponding `*:success` payloads, containing only changed fields.
 
-#### 2.1. Update to Current Client
+#### 2.1. Update to Current Client (Participants Only)
 
-Sent to the specific client whose data has changed.
+These events exist for the sake of a pleasant typing experience.
+They
+ are sent to the **participant** client whose data has changed. Spectators do not receive this event.
 
-| Event       | Description                                                   | Payload Type      |
-| ----------- | ------------------------------------------------------------- | ----------------- |
-| `update:me` | Server-initiated partial update of the client's session data. | `UpdateMePayload` |
+| Event       | Description                                                        | Payload Type      |
+| ----------- | ------------------------------------------------------------------ | ----------------- |
+| `update:me` | Server-initiated partial update of the participant's session data. | `UpdateMePayload` |
 
-#### 2.2. Update to All Clients in Room
+#### 2.2. Update to All Clients in Room (Including Spectators)
 
-Sent to all clients within the same tournament room.
+Sent to all clients (participants and spectators) within the same tournament room.
 
 | Event         | Description                                                    | Payload Type        |
 | ------------- | -------------------------------------------------------------- | ------------------- |
-| `update:us`   | Server-initiated partial update of participants' session data. | `UpdateUsPayload`   |
+| `update:all`  | Server-initiated partial update of participants' session data. | `UpdateUsPayload`   |
 | `update:data` | Server-initiated partial update of overall tournament data.    | `UpdateDataPayload` |
 
-### 3. Broadcast Notifications (Full Data)
+### 3. Broadcast Notifications (Full Data) (Including Spectators)
 
-Broadcast to all clients in the tournament room. These carry full data payloads.
+Broadcast to all clients (participants and spectators) in the tournament room. These carry full data payloads.
 
 | Event           | Description                                                | Payload Type          |
 | --------------- | ---------------------------------------------------------- | --------------------- |
-| `member:joined` | Notifies that a new participant has joined the tournament. | `MemberJoinedPayload` |
-| `member:left`   | Notifies that a participant has left the tournament.       | `MemberLeftPayload`   |
+| `member:joined` | Notifies that a new **participant** has joined the tournament. | `MemberJoinedPayload` |
+| `member:left`   | Notifies that a **participant** has left the tournament.       | `MemberLeftPayload`   |
 
 ---
 
@@ -144,7 +156,7 @@ async function fire(eventName: PollableEvent, payload: unknown = {}) {
 
 ```javascript
 try {
-  const result = await socketInstance.fire("us", { payload });
+  const result = await socketInstance.fire("eventName", payload);
   if (result.success) {
     console.log("Received data:", result.data);
   } else {
@@ -165,17 +177,18 @@ The server may use `serde_json::json!` for dynamic construction of JSON response
 use serde_json::json;
 
 let payload = json!({
-    "userId": user_id,
-    "tournamentId": room_id,
+    "userId": "user_id_example",
+    "tournamentId": "room_id_example",
     "message": "Successfully joined the tournament."
 });
+
 socket.emit("join:success", payload).ok();
 ```
 
-### Payload types
+### Payload types (Rust example)
 
 ```rust
-pub struct TypeArgs {
+struct TypeEventPayload {
     character: char,
 }
 ```
@@ -186,7 +199,7 @@ pub struct TypeArgs {
 
 These define the structure of data exchanged for various events.
 
-Http endpoint `/auth/me` returns `ClientSchema` whether user is authenticated or not. This helps to track each client in tournaments.
+The HTTP endpoint `/auth/me` returns `ClientSchema` whether the user is authenticated or not. This helps track each client in tournaments.
 
 ### Common Types
 
@@ -201,16 +214,16 @@ export type UserSchema = {
 
 export type ClientSchema = {
   id: string;
-  user: UserSchema | null; // some users are anonymous (playing without loggin in)
+  user: UserSchema | null;
   updated: string;
 };
 
 export type TextOptions = {
-  uppercase: boolean; // includes uppecase letters
-  lowercase: boolean; // includes lowercase letters
-  numbers: boolean; // includes numbers
-  symbols: boolean; // includes special characters
-  meaningful: boolean; // if words or constructions are meaningful
+  uppercase: boolean;
+  lowercase: boolean;
+  numbers: boolean;
+  symbols: boolean;
+  meaningful: boolean;
 };
 
 export type TournamentData = {
@@ -234,8 +247,8 @@ export type ParticipantData = {
   totalKeystrokes: number;
   currentSpeed: number;
   currentAccuracy: number;
-  startedAt: string | null; // specific to the participant
-  endedAt: string | null; // specific to the participant
+  startedAt: string | null;
+  endedAt: string | null;
 };
 
 export type ParticipantUpdate = {
@@ -247,10 +260,10 @@ export type WsFailurePayload = {
   message: string;
 };
 
-export type PollableEvent = "me" | "us" | "data" | "check" | "leave";
+export type PollableEvent = "me" | "all" | "data" | "check" | "leave";
 
 export type TypeEventPayload = {
-  character: string; // single character typed by the user
+  character: string;
 };
 ```
 
@@ -259,7 +272,7 @@ export type TypeEventPayload = {
 ```typescript
 export type JoinSuccessPayload = {
   data: TournamentData;
-  clientId: string; // id for the participant. equivalent to `client.id`
+  clientId: string;
   participants: ParticipantData[];
 };
 ```
@@ -274,7 +287,7 @@ export type MeSuccessPayload = ParticipantData;
 
 ### `UpdateMePayload`
 
-Payload for `update:me` (partial `MeSuccessPayload`). `userId` is implicit.
+Payload for `update:me` (partial `MeSuccessPayload`). `clientId` is implicit.
 
 ```typescript
 export type UpdateMePayload = ParticipantUpdate;
@@ -282,7 +295,7 @@ export type UpdateMePayload = ParticipantUpdate;
 
 ### `UsSuccessPayload`
 
-Payload for `us:success`.
+Payload for `all:success`.
 
 ```typescript
 export type UsSuccessPayload = ParticipantData[];
@@ -290,7 +303,7 @@ export type UsSuccessPayload = ParticipantData[];
 
 ### `UpdateUsPayload`
 
-Payload for `update:us`.
+Payload for `update:all`.
 
 ```typescript
 type PartialParticipantDataForUpdate = {
@@ -360,50 +373,83 @@ export type LeaveSuccessPayload = {
 };
 ```
 
-## Client-side State Management
+---
 
-### State management types
+## Client-Side State Management
 
-1.  `participants`: `Record<string, ParticipantData>`
+### State Management Types
 
-- Initially got from `JoinSuccessPayload.participants` (recommended) or `UsSuccessPayload`
-- Key for the record will be client id accessed from `client.id` or `JoinSuccessPayload.clientId`.
-- Must be updated after each `update:us` event.
-- Must be manually updated after `member:left` and `member:joined` as there will not be a `update:us` for these cases.
-- Must be updated after every `update:me` event unless implementation separates `me` from `participants`,
-  in which case `me` will be updated separately and `participants` will catch up with the next `update:us` event.
+1.  **`participants`: `Record<string, ParticipantData>`**
+    *   Initially populated from `JoinSuccessPayload.participants` or `UsSuccessPayload`.
+    *   The key for the record will be the `client.id` from `ParticipantData`.
+    *   Must be updated after each `update:all` event.
+    *   Must be manually updated after `member:left` (remove entry) and `member:joined` (add entry), as there will not necessarily be an `update:all` for these specific cases.
+    *   For participants, it must be updated after every `update:me` event unless the implementation separates `me` data, in which case `me` will be updated separately and `participants` may catch up with a subsequent `update:all` event.
 
-2.  `data`: `TournamentData`
+2.  **`data`: `TournamentData`**
+    *   Initially populated from `JoinSuccessPayload.data` or `DataSuccessPayload`.
+    *   Must be updated after every `update:data` event.
 
-- Initially got from `JoinSuccessPayload.data` (recommended) or `DataSuccessPayload`
-- Must be updated after every `update:data` event.
+3.  **`me`: `ParticipantData | null`** (If stored as a separate object).
+    *   For participants, initially populated from `participants[JoinSuccessPayload.clientId]` or `MeSuccessPayload`. Must be updated after every `update:me` event.
+    *   For spectators, this will be `null`.
 
-3.  `me`: `ParticipantData` (If stored as a separe object).
+4.  **`isSpectator`: `boolean`**
+    *   Determined client-side after `join:success`. If the client requested to join with `spectator=true` and its `JoinSuccessPayload.clientId` is not found as a `client.id` within any `ParticipantData` object in `JoinSuccessPayload.participants`, then `isSpectator` is true.
 
-- Initially got from `participants[JoinSuccessPayload.clientId]` (recommended) or `MeSuccessPayload`
-- Must be updated after every `update:me` event.
+### Additional State Considerations
+*   `TournamentData.text` and `TournamentData.startedAt` will typically be set (or updated from `null`) simultaneously when a tournament officially starts, often via an `update:data` event.
+*   The server may process multiple successive `type` events from a participant together and reflect the cumulative updates in a single `update:me` event.
 
-4.  `TournamentData.text` and `TournamentData.startedAt` will simultaneously be set when tournament starts via a `update:data` event.
-5.  Server may process multiple successive `type` events together and return the updates in a single `update:me` event.
+### WebSocket Implementation Notes
 
-### Web socket implementation notes
-
-1. Abstract web socket logic into a class(es) from which an instance can be created once and passed around
-2. Use a single socket connection per client, and reuse it for all events.
-3. Reconnect logic should lead to state updates (via the `join:success` event callback)
+1.  Abstract WebSocket logic into a class or service from which an instance can be created once and passed around.
+2.  Use a single WebSocket connection per client and reuse it for all events.
+3.  Reconnect logic should lead to state updates (via the `join:success` event callback) to ensure data consistency.
 
 ### Retries
 
-- Reconnecting with socket after disconnect will recover previous data
-- Reconnecting logic should always wait for `join:success` and update state variables
-- All **pollable events** can be retried any number of times.
+*   Reconnecting with the socket after a disconnect should allow the client to recover its previous state and data upon a successful `join:success`.
+*   Reconnecting logic should always await `join:success` and update relevant client-side state variables.
+*   All **pollable events** can be retried by the client any number of times if a response is not received (e.g., due to timeout or transient network issues).
 
-\_(**pollable events** follow the pattern: client fires `{eventname}` then responds with `{eventname}:success` or `{eventname}:failure`. They can be implemented as promises that resolve after server responds)
+(**Pollable events** follow the pattern: client fires `{eventName}` and expects the server to respond with `{eventName}:success` or `{eventName}:failure`. They can be implemented as promises that resolve or reject after the server responds or a timeout occurs.)
+
+---
+
+## Spectator Mode
+
+Clients can join tournaments as non-participating spectators.
+
+### Joining as a Spectator
+*   Clients include a query parameter `spectator=true` (string "true") in the WebSocket connection URL.
+    ```javascript
+    const tournamentId = "your_tournament_id";
+    const socket = io(namespaceUrl, {
+      query: { id: tournamentId, spectator: "true" },
+      // ... other options
+    });
+    ```
+
+### Server-Side Handling of Spectators
+*   Spectator sockets are added to the same WebSocket **room** as participants to receive broadcast events.
+*   The server **will not have listeners for certain client-sent events from spectator sockets**, specifically:
+    *   `type`: Spectators cannot submit typing data.
+    *   `me`: Spectators do not have individual participant session data to request.
+*   Consequently, spectators will not receive `update:me` events.
+*   Spectators **will** receive all other broadcast events (`update:all`, `update:data`, `member:joined`, `member:left`) and can successfully interact with events for which listeners are established for all clients (e.g., `all`, `data`, `check`, `leave`).
+*   A spectator's `JoinSuccessPayload.clientId` will not be present as a `client.id` in the `JoinSuccessPayload.participants` array.
+
+### Client-Side Guidance for Spectators
+*   Determine spectator status based on the handshake query and the content of `JoinSuccessPayload`.
+*   Prevent UI interactions or event emissions for actions not applicable to spectators (e.g., typing input).
+*   Consider a dedicated view for spectators (e.g., `SpectatorViewTypingArea`) that visually mirrors the participant experience but lacks interactive typing functionality.
+
+---
 
 ## Error Codes
 
-All `:failure` events return a `WsFailurePayload` object:
-`{ code: number; message: string; }`
+All `:failure` events return a `WsFailurePayload` object: `{ code: number; message: string; }`.
 
 ### 1xxx: Connection & Handshake Errors
 | Code | Event(s)       | Default Message Suggestion                      | Notes                                     |
@@ -414,8 +460,9 @@ All `:failure` events return a `WsFailurePayload` object:
 | 1004 | `join:failure` | "Maximum participants reached."                 | Tournament is full.                       |
 | 1005 | `join:failure` | "Already connected to this tournament."         | If single session per user is enforced.   |
 | 1006 | `join:failure` | "Access denied to private tournament."          |                                           |
+| 1007 | `join:failure` | "Spectator mode parameter invalid."             | e.g., if `spectator` param has unexpected value. |
 
-### 2xxx: Client Request & Validation Errors
+### 2xxx: Client Request & Validation Errors (Primarily for Participants or general requests)
 | Code | Event(s)       | Default Message Suggestion                      | Notes                                     |
 |------|----------------|-------------------------------------------------|-------------------------------------------|
 | 2001 | *Any*          | "Invalid event name."                           | Server received an unrecognized event.    |
@@ -430,9 +477,8 @@ All `:failure` events return a `WsFailurePayload` object:
 | Code | Event(s)       | Default Message Suggestion                      | Notes                                     |
 |------|----------------|-------------------------------------------------|-------------------------------------------|
 | 3001 | `data:failure` | "Tournament data unavailable."                  | Error fetching overall tournament details.|
-| 3101 | `me:failure`, `us:failure` | "Participant data unavailable."     | Error fetching participant details.       |
+| 3101 | `me:failure` (Participant), `all:failure` | "Participant data unavailable." | Error fetching participant details.       |
 | 3102 | `leave:failure`| "Failed to process leave request."              |                                           |
-
 
 ### 4xxx: Server-Side Operational Errors
 | Code | Event(s)       | Default Message Suggestion                      | Notes                                     |
@@ -443,6 +489,15 @@ All `:failure` events return a `WsFailurePayload` object:
 
 _(This list is not exhaustive and should be expanded as specific error cases are identified during development.)_
 
+---
+
 ## Future Improvements
 
-- Add a `cursor` field to `type` event payloads, and resolution logic for common inconsistencies
+*   Add a `cursor` field to `type` event payloads, and resolution logic for common inconsistencies.
+*   Improve spectator logic by tracking their `ClientSchema` on the server side.
+*   Add events for managing a visible spectator list on the frontend if this feature is desired (e.g., `spectator:joined`, `spectator:left`, distinct from `member:` events).
+*   Add an `avatarUrl` or similar attribute to the `UserSchema` for richer user display.
+*   Define specific tournament capacity limits for participants and spectators.
+*   Add an analytics api and logic for feeding it on each `type` event for authenticated users to allow it to learn user weaknessess, strengths, etc.
+*   Add a `TypingAlgorithm` trait or enum that can be chosen during tournament creation and used for typing processing.
+---
