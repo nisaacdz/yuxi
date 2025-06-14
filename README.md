@@ -247,7 +247,7 @@ export type WsFailurePayload = {
   message: string;
 };
 
-export type PollableEvent = "me" | "us" | "leave" | "data" | "check";
+export type PollableEvent = "me" | "us" | "data" | "check" | "leave";
 
 export type TypeEventPayload = {
   character: string; // single character typed by the user
