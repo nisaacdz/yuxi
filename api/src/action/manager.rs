@@ -35,14 +35,14 @@ const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
 
 #[derive(Serialize, Debug, Clone)]
 struct WsFailurePayload {
-    code: String,
+    code: i32,
     message: String,
 }
 
 impl WsFailurePayload {
-    fn new(code: &str, message: &str) -> Self {
+    fn new(code: i32, message: &str) -> Self {
         Self {
-            code: code.to_string(),
+            code: code,
             message: message.to_string(),
         }
     }
@@ -433,7 +433,7 @@ impl TournamentManager {
 
             if !can_join {
                 error!(client_id = %client_schema.id, "Cannot join tournament {}: {}", self.inner.tournament_id, reason);
-                let failure_payload = WsFailurePayload::new("JOIN_FAILED", reason);
+                let failure_payload = WsFailurePayload::new(1004, reason);
                 // Emit failure and return early
                 if socket.emit("join:failure", &failure_payload).is_err() {
                     warn!("Failed to send join:failure to client {}", client_schema.id);
@@ -562,7 +562,7 @@ impl TournamentManager {
             Some(session) => session,
             None => {
                 warn!(client_id = %client.id, "Typing event received, but no active session found.");
-                let failure_payload = WsFailurePayload::new("AUTH_ERROR", "Client ID not found.");
+                let failure_payload = WsFailurePayload::new(2210, "Client ID not found.");
                 socket.emit("type:failure", &failure_payload).ok();
                 return;
             }
@@ -761,7 +761,7 @@ impl TournamentManager {
                             }
                         } else {
                             let failure_payload =
-                                WsFailurePayload::new("NOT_FOUND", "Your session was not found.");
+                                WsFailurePayload::new(3101, "Your session was not found.");
                             if socket_me.emit("me:failure", &failure_payload).is_err() {
                                 warn!("Failed to send me:failure to client {}", cid_me);
                             }
@@ -904,7 +904,7 @@ impl TournamentManager {
                 client_id_str, self.inner.tournament_id
             );
             let failure_payload = WsFailurePayload::new(
-                "NOT_IN_TOURNAMENT",
+                2210,
                 "You are not currently in this tournament session.",
             );
             if socket.emit("leave:failure", &failure_payload).is_err() {
