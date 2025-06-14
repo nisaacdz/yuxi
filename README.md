@@ -67,7 +67,7 @@ Sent to a specific client in direct response to their requests (if a server-side
 | `join:failure`  | Indicates failure to associate with the tournament.                   | `WsFailurePayload`    |
 | `me:success`    | Returns the client's typing session data (Participants only).         | `MeSuccessPayload`    |
 | `me:failure`    | Indicates an error fetching client's session data (Participants only).| `WsFailurePayload`    |
-| `all:success`   | Returns typing session data for all participants.                     | `UsSuccessPayload`    |
+| `all:success`   | Returns typing session data for all participants.                     | `AllSuccessPayload`    |
 | `all:failure`   | Indicates an error fetching all participants' data.                   | `WsFailurePayload`    |
 | `leave:success` | Confirms successful departure from the tournament.                    | `LeaveSuccessPayload` |
 | `leave:failure` | Indicates an error during the leave process.                          | `WsFailurePayload`    |
@@ -97,7 +97,7 @@ Sent to all clients (participants and spectators) within the same tournament roo
 
 | Event         | Description                                                    | Payload Type        |
 | ------------- | -------------------------------------------------------------- | ------------------- |
-| `update:all`  | Server-initiated partial update of participants' session data. | `UpdateUsPayload`   |
+| `update:all`  | Server-initiated partial update of participants' session data. | `UpdateAllPayload`  |
 | `update:data` | Server-initiated partial update of overall tournament data.    | `UpdateDataPayload` |
 
 ### 3. Broadcast Notifications (Full Data) (Including Spectators)
@@ -293,15 +293,15 @@ Payload for `update:me` (partial `MeSuccessPayload`). `clientId` is implicit.
 export type UpdateMePayload = ParticipantUpdate;
 ```
 
-### `UsSuccessPayload`
+### `AllSuccessPayload`
 
 Payload for `all:success`.
 
 ```typescript
-export type UsSuccessPayload = ParticipantData[];
+export type AllSuccessPayload = ParticipantData[];
 ```
 
-### `UpdateUsPayload`
+### `UpdateAllPayload`
 
 Payload for `update:all`.
 
@@ -310,7 +310,7 @@ type PartialParticipantDataForUpdate = {
   clientId: string;
 } & ParticipantUpdate;
 
-export type UpdateUsPayload = {
+export type UpdateAllPayload = {
   updates: PartialParticipantDataForUpdate[];
 };
 ```
@@ -380,7 +380,7 @@ export type LeaveSuccessPayload = {
 ### State Management Types
 
 1.  **`participants`: `Record<string, ParticipantData>`**
-    *   Initially populated from `JoinSuccessPayload.participants` or `UsSuccessPayload`.
+    *   Initially populated from `JoinSuccessPayload.participants` or `AllSuccessPayload`.
     *   The key for the record will be the `client.id` from `ParticipantData`.
     *   Must be updated after each `update:all` event.
     *   Must be manually updated after `member:left` (remove entry) and `member:joined` (add entry), as there will not necessarily be an `update:all` for these specific cases.
