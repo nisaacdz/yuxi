@@ -1,8 +1,8 @@
 use chrono::Utc;
 use models::queries::TournamentPaginationQuery;
 use models::schemas::pagination::PaginatedData;
-use models::schemas::text::TextOptions;
 use models::schemas::tournament::{Tournament, TournamentSchema};
+use models::schemas::typing::TextOptions;
 use models::schemas::user::UserSchema;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
@@ -13,6 +13,8 @@ use models::domains::*;
 use models::params::tournament::CreateTournamentParams;
 
 use crate::state::AppState;
+
+const TOURNAMENT_ID_LENGTH: usize = 24;
 
 pub async fn parse_tournament(
     tournament: tournaments::Model,
@@ -63,7 +65,10 @@ pub async fn create_tournament(
     params: CreateTournamentParams,
     user: &UserSchema,
 ) -> Result<tournaments::ActiveModel, DbErr> {
+    let id = nanoid::nanoid!(TOURNAMENT_ID_LENGTH, &super::ID_ALPHABET);
+
     tournaments::ActiveModel {
+        id: Set(id),
         title: Set(params.title),
         scheduled_for: Set(params.scheduled_for),
         created_by: Set(user.id.clone()),

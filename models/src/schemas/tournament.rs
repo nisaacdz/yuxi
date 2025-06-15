@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
 
-use super::text::TextOptions;
+use super::typing::TextOptions;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct TournamentSchema {
@@ -16,7 +16,6 @@ pub struct TournamentSchema {
     pub scheduled_for: DateTimeUtc,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
-    pub text_id: Option<i32>,
 }
 
 impl From<tournaments::Model> for TournamentSchema {
@@ -30,7 +29,6 @@ impl From<tournaments::Model> for TournamentSchema {
             scheduled_for: tournament.scheduled_for.to_utc(),
             privacy: tournament.privacy,
             text_options: tournament.text_options.map(TextOptions::from_value),
-            text_id: tournament.text_id,
         }
     }
 }

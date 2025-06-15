@@ -1,4 +1,4 @@
-use sea_orm::prelude::{DateTimeUtc, Decimal};
+use sea_orm::prelude::DateTimeUtc;
 use serde::Serialize;
 
 use crate::domains::completed_sessions;
@@ -8,9 +8,8 @@ pub struct CompletedSessionSchema {
     pub id: i32,
     pub user_id: i32,
     pub tournament_id: String,
-    pub text_id: i32,
-    pub accuracy: Decimal,
-    pub speed: Decimal,
+    pub accuracy: i32,
+    pub speed: i32,
     pub completed_at: DateTimeUtc,
 }
 
@@ -20,7 +19,6 @@ impl From<completed_sessions::Model> for CompletedSessionSchema {
             id: session.id,
             user_id: session.user_id,
             tournament_id: session.tournament_id,
-            text_id: session.text_id,
             accuracy: session.accuracy,
             speed: session.speed,
             completed_at: session.completed_at.to_utc(),

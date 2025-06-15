@@ -55,3 +55,34 @@ pub enum TournamentStatus {
     Started,
     Ended,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TextOptions {
+    uppercase: bool,
+    lowercase: bool,
+    numbers: bool,
+    symbols: bool,
+    meaningful: bool,
+}
+
+impl TextOptions {
+    pub fn from_value(value: serde_json::Value) -> Self {
+        serde_json::from_value(value).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap()
+    }
+}
+
+impl Default for TextOptions {
+    fn default() -> Self {
+        Self {
+            uppercase: true,
+            lowercase: true,
+            numbers: true,
+            symbols: true,
+            meaningful: true,
+        }
+    }
+}

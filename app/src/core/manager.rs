@@ -7,7 +7,10 @@ use models::schemas::{
 };
 use serde::Serialize;
 use socketioxide::extract::{Data, SocketRef};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -15,6 +18,7 @@ use tracing::{error, info, warn};
 use crate::{
     cache::{Cache, TournamentRegistry},
     core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor},
+    persistence::text,
     state::AppState,
 };
 
@@ -150,7 +154,7 @@ struct UpdateDataPayload {
     ended_at: Option<DateTime<Utc>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<Option<String>>,
+    text: Option<String>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -164,7 +168,7 @@ struct TournamentManagerInner {
     tournament_session_state: Mutex<TournamentSession>,
     participants: Cache<TypingSessionSchema>,
     app_state: AppState,
-    typing_text: Arc<String>,
+    typing_text: RwLock<Arc<String>>,
     update_all_notifier: Arc<Notify>,
 }
 
@@ -175,11 +179,7 @@ pub struct TournamentManager {
 }
 
 impl TournamentManager {
-    pub fn new(
-        tournament_schema: TournamentSchema,
-        typing_text_content: String,
-        app_state: AppState,
-    ) -> Self {
+    pub fn new(tournament_schema: TournamentSchema, app_state: AppState) -> Self {
         info!(
             "Initializing TournamentManager for {}",
             &tournament_schema.id
@@ -192,7 +192,7 @@ impl TournamentManager {
         ));
 
         let tournament_id_arc = Arc::new(tournament_schema.id.to_string());
-        let typing_text_arc = Arc::new(typing_text_content);
+        let typing_text_arc = Arc::new("".to_string()); // Default empty text
         let update_all_notifier = Arc::new(Notify::new());
 
         let inner_manager_state = TournamentManagerInner {
@@ -201,7 +201,7 @@ impl TournamentManager {
             tournament_session_state: initial_session_state,
             participants: Cache::new(),
             app_state: app_state.clone(),
-            typing_text: typing_text_arc,
+            typing_text: RwLock::new(typing_text_arc),
             update_all_notifier: update_all_notifier.clone(),
         };
 
@@ -330,13 +330,21 @@ impl TournamentManager {
                 let mut session_state_guard = self.inner.tournament_session_state.lock().await;
                 session_state_guard.started_at = Some(Utc::now());
 
+                let typing_text = text::generate_text(
+                    self.inner.tournament_meta.text_options.unwrap_or_default(),
+                );
+
+                {
+                    *self.inner.typing_text.write().unwrap() = Arc::new(typing_text);
+                }
+
                 update_data_payload = UpdateDataPayload {
                     title: None,
                     scheduled_for: None,
                     description: None,
                     started_at: session_state_guard.started_at,
                     ended_at: session_state_guard.ended_at,
-                    text: Some(Some(self.inner.typing_text.to_string())),
+                    text: Some(self.inner.typing_text.read().unwrap().to_string()),
                 };
             }
 
@@ -447,7 +455,7 @@ impl TournamentManager {
                 started_at: t_session_state_guard.started_at,
                 ended_at: t_session_state_guard.ended_at,
                 text: if t_session_state_guard.started_at.is_some() {
-                    Some(self.inner.typing_text.to_string())
+                    Some(self.inner.typing_text.read().unwrap().to_string())
                 } else {
                     None
                 },
@@ -540,7 +548,7 @@ impl TournamentManager {
             return;
         }
 
-        let typing_text = self.inner.typing_text.clone();
+        let typing_text = self.inner.typing_text.read().unwrap().clone();
         let cache = self.inner.participants.clone();
 
         let typing_session = match cache.get_data(&client.id) {
@@ -800,7 +808,7 @@ impl TournamentManager {
                             started_at: t_session_state_guard.started_at,
                             ended_at: t_session_state_guard.ended_at,
                             text: if t_session_state_guard.started_at.is_some() {
-                                Some(mc_data.inner.typing_text.to_string())
+                                Some(mc_data.inner.typing_text.read().unwrap().to_string())
                             } else {
                                 None
                             },

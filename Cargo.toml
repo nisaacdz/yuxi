@@ -37,6 +37,7 @@ base64 = "0.22.1"
 anyhow = "1.0.86"
 lettre = "0.11.17"
 rand = "0.9.1"
+nanoid = "0.4.0"
 
 [dependencies]
 # Local dependencies

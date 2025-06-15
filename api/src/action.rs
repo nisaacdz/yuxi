@@ -70,25 +70,10 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 }
             };
 
-            let typing_text =
-                match app::persistence::text::get_or_generate_text(&app_state.conn, &tournament.id)
-                    .await
-                {
-                    Ok(text) => text,
-                    Err(e) => {
-                        error!(
-                            "Error fetching text for tournament '{}': {}",
-                            tournament_id, e
-                        );
-                        let _ = socket.disconnect();
-                        return;
-                    }
-                };
-
             let tournament_registry = app_state.tournament_registry.clone();
 
             let manager = tournament_registry.get_or_init(tournament_id.to_string(), move || {
-                TournamentManager::new(tournament, typing_text, app_state)
+                TournamentManager::new(tournament, app_state)
             });
 
             if let Err(e) = manager.connect(socket.clone(), spectator).await {
