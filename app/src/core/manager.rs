@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
-    tournament::{TournamentSchema, TournamentSession},
-    typing::TypingSessionSchema,
+    tournament::{TournamentLiveData, TournamentSchema, TournamentSession},
+    typing::{TournamentStatus, TypingSessionSchema},
     user::ClientSchema,
 };
 use serde::Serialize;
@@ -656,11 +656,11 @@ impl TournamentManager {
                             mc_check.inner.tournament_session_state.lock().await;
 
                         if session_state_guard.ended_at.is_some() {
-                            "ENDED"
+                            TournamentStatus::Ended
                         } else if session_state_guard.started_at.is_some() {
-                            "STARTED"
+                            TournamentStatus::Started
                         } else {
-                            "UPCOMING"
+                            TournamentStatus::Upcoming
                         }
                     };
 
@@ -910,6 +910,23 @@ impl TournamentManager {
         // Takes Arc<String>
         info!("Cleaning up manager for tournament {}", tournament_id);
         tournament_registry.evict(tournament_id.as_str()); // Evict takes &str
+    }
+
+    pub async fn live_data(&self, client_id: &str) -> TournamentLiveData {
+        let participant_count = self.inner.participants.count();
+        let participating = self.inner.participants.contains_key(client_id);
+
+        let (started_at, ended_at) = {
+            let session_state_guard = self.inner.tournament_session_state.lock().await;
+            (session_state_guard.started_at, session_state_guard.ended_at)
+        };
+
+        TournamentLiveData {
+            participant_count,
+            participating,
+            started_at,
+            ended_at,
+        }
     }
 }
 

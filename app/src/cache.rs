@@ -103,6 +103,10 @@ impl TournamentRegistry {
         }
     }
 
+    pub fn get(&self, id: &str) -> Option<TournamentManager> {
+        self.registry.get_data(id)
+    }
+
     pub fn get_or_init<F>(&self, tournament_id: String, with: F) -> TournamentManager
     where
         F: FnOnce() -> TournamentManager,

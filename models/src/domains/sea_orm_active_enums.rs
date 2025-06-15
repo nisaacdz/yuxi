@@ -3,7 +3,9 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[serde(untagged)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tournament_privacy")]
 pub enum TournamentPrivacy {
     #[sea_orm(string_value = "open")]

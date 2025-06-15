@@ -14,11 +14,11 @@ pub struct Model {
     pub created_by: String,
     pub scheduled_for: DateTimeWithTimeZone,
     pub started_at: Option<DateTimeWithTimeZone>,
+    pub ended_at: Option<DateTimeWithTimeZone>,
     pub privacy: TournamentPrivacy,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub text_options: Option<Json>,
     pub text_id: Option<i32>,
-    pub joined: i32,
     pub updated_at: DateTimeWithTimeZone,
 }
 

@@ -1,22 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{tournament::TournamentSession, user::ClientSchema};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TournamentUpdateSchema {
-    pub tournament: TournamentSession,
-    pub participants: Vec<TypingSessionSchema>,
-}
-
-impl TournamentUpdateSchema {
-    pub fn new(tournament: TournamentSession, participants: Vec<TypingSessionSchema>) -> Self {
-        Self {
-            tournament,
-            participants,
-        }
-    }
-}
+use super::user::ClientSchema;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TypingSessionSchema {
@@ -60,4 +45,13 @@ impl TypingSessionSchema {
         self.current_accuracy = current_accuracy;
         self.current_speed = current_speed;
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+#[serde(untagged)]
+pub enum TournamentStatus {
+    Upcoming,
+    Started,
+    Ended,
 }
