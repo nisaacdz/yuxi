@@ -167,13 +167,12 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(typing_history::Column::UserId)
-                            .integer()
+                            .string()
                             .not_null(),
                     )
                     .col(
                         ColumnDef::new(typing_history::Column::TournamentId)
                             .string()
-                            .unique_key()
                             .not_null(),
                     )
                     .col(
