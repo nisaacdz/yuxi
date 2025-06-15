@@ -31,7 +31,7 @@ CREATE TABLE tournaments (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE completed_sessions (
+CREATE TABLE typing_history (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tournament_id VARCHAR(16) NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
@@ -42,8 +42,8 @@ CREATE TABLE completed_sessions (
 );
 
 ALTER TABLE tournaments ADD CONSTRAINT valid_schedule CHECK (scheduled_for >= created_at);
-ALTER TABLE completed_sessions ADD CONSTRAINT valid_accuracy CHECK (accuracy BETWEEN 0 AND 100);
-ALTER TABLE completed_sessions ADD CONSTRAINT valid_speed CHECK (speed >= 0);
+ALTER TABLE typing_history ADD CONSTRAINT valid_accuracy CHECK (accuracy BETWEEN 0 AND 100);
+ALTER TABLE typing_history ADD CONSTRAINT valid_speed CHECK (speed >= 0);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -57,6 +57,6 @@ CREATE TRIGGER user_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION
 CREATE TRIGGER tournament_updated BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX idx_tournaments_created_by ON tournaments(created_by);
 CREATE INDEX idx_tournaments_text_id ON tournaments(text_id);
-CREATE INDEX idx_completed_sessions_user_id ON completed_sessions(user_id);
-CREATE INDEX idx_completed_sessions_tournament_id ON completed_sessions(tournament_id);
-CREATE INDEX idx_completed_sessions_text_id ON completed_sessions(text_id);
+CREATE INDEX idx_typing_history_user_id ON typing_history(user_id);
+CREATE INDEX idx_typing_history_tournament_id ON typing_history(tournament_id);
+CREATE INDEX idx_typing_history_text_id ON typing_history(text_id);

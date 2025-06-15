@@ -1,10 +1,10 @@
 use sea_orm::prelude::DateTimeUtc;
 use serde::Serialize;
 
-use crate::domains::completed_sessions;
+use crate::domains::typing_history;
 
 #[derive(Serialize)]
-pub struct CompletedSessionSchema {
+pub struct TypingHistorySchema {
     pub id: i32,
     pub user_id: i32,
     pub tournament_id: String,
@@ -13,8 +13,8 @@ pub struct CompletedSessionSchema {
     pub completed_at: DateTimeUtc,
 }
 
-impl From<completed_sessions::Model> for CompletedSessionSchema {
-    fn from(session: completed_sessions::Model) -> Self {
+impl From<typing_history::Model> for TypingHistorySchema {
+    fn from(session: typing_history::Model) -> Self {
         Self {
             id: session.id,
             user_id: session.user_id,
@@ -27,16 +27,16 @@ impl From<completed_sessions::Model> for CompletedSessionSchema {
 }
 
 #[derive(Serialize)]
-pub struct CompletedSessionListSchema {
-    pub completed_sessions: Vec<CompletedSessionSchema>,
+pub struct TypingHistoryListSchema {
+    pub typing_history: Vec<TypingHistorySchema>,
 }
 
-impl From<Vec<completed_sessions::Model>> for CompletedSessionListSchema {
-    fn from(completed_sessions: Vec<completed_sessions::Model>) -> Self {
+impl From<Vec<typing_history::Model>> for TypingHistoryListSchema {
+    fn from(typing_history: Vec<typing_history::Model>) -> Self {
         Self {
-            completed_sessions: completed_sessions
+            typing_history: typing_history
                 .into_iter()
-                .map(CompletedSessionSchema::from)
+                .map(TypingHistorySchema::from)
                 .collect(),
         }
     }

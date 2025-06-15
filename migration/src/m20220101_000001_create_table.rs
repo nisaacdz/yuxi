@@ -1,4 +1,4 @@
-use models::domains::{otp, sea_orm_active_enums, texts, tournaments, users};
+use models::domains::*;
 use sea_orm_migration::prelude::{extension::postgres::Type, *};
 
 #[derive(DeriveMigrationName)]
@@ -47,24 +47,6 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .create_table(
-                Table::create()
-                    .table(texts::Entity)
-                    .if_not_exists()
-                    .col(
-                        ColumnDef::new(texts::Column::Id)
-                            .integer()
-                            .not_null()
-                            .auto_increment()
-                            .primary_key(),
-                    )
-                    .col(ColumnDef::new(texts::Column::Content).text().not_null())
-                    .col(ColumnDef::new(texts::Column::Options).json_binary().null())
                     .to_owned(),
             )
             .await?;
@@ -125,7 +107,6 @@ impl MigrationTrait for Migration {
                             .json_binary()
                             .null(),
                     )
-                    .col(ColumnDef::new(tournaments::Column::TextId).integer().null())
                     .col(
                         ColumnDef::new(tournaments::Column::UpdatedAt)
                             .timestamp_with_time_zone()
@@ -138,14 +119,6 @@ impl MigrationTrait for Migration {
                             .from(tournaments::Entity, tournaments::Column::CreatedBy)
                             .to(users::Entity, users::Column::Id)
                             .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::NoAction),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk-tournament-text_id")
-                            .from(tournaments::Entity, tournaments::Column::TextId)
-                            .to(texts::Entity, texts::Column::Id)
-                            .on_delete(ForeignKeyAction::SetNull)
                             .on_update(ForeignKeyAction::NoAction),
                     )
                     .to_owned(),
@@ -182,10 +155,10 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // 6. Create CompletedSessions Table (You'll need to define its columns and FKs)
-        // manager.create_table(Table::create().table(completed_sessions::Entity)...).await?;
-        // And add foreign keys from users and tournaments to completed_sessions if they are one-to-many.
-        // Your current relations define completed_sessions as `has_many`, so completed_sessions would have `user_id` and `tournament_id` FKs.
+        // 6. Create TypingHistorys Table (You'll need to define its columns and FKs)
+        // manager.create_table(Table::create().table(typing_history::Entity)...).await?;
+        // And add foreign keys from users and tournaments to typing_history if they are one-to-many.
+        // Your current relations define typing_history as `has_many`, so typing_history would have `user_id` and `tournament_id` FKs.
 
         Ok(())
     }
@@ -194,7 +167,7 @@ impl MigrationTrait for Migration {
         // Drop tables in reverse order of creation, and drop FKs implicitly with tables or explicitly if needed.
         // Drop custom enum type last.
 
-        // manager.drop_table(Table::drop().table(completed_sessions::Entity).to_owned()).await?;
+        // manager.drop_table(Table::drop().table(typing_history::Entity).to_owned()).await?;
         manager
             .drop_table(Table::drop().table(otp::Entity).to_owned())
             .await?;
@@ -202,13 +175,9 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(tournaments::Entity).to_owned())
             .await?;
         manager
-            .drop_table(Table::drop().table(texts::Entity).to_owned())
-            .await?;
-        manager
             .drop_table(Table::drop().table(users::Entity).to_owned())
             .await?;
 
-        // Drop the custom ENUM type (PostgreSQL specific)
         manager
             .drop_type(
                 Type::drop()
