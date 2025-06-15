@@ -5,25 +5,14 @@ use models::schemas::{
     typing::TypingSessionSchema,
     user::ClientSchema,
 };
-use sea_orm::DatabaseConnection;
 use serde::Serialize;
-use socketioxide::{
-    SocketIo,
-    extract::{Data, SocketRef},
-};
+use socketioxide::extract::{Data, SocketRef};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::{
-    action::moderation::FrequencyMonitor,
-    cache::{TournamentRegistry, TypingSessionRegistry},
-};
-
-use app::cache::Cache;
-
-use crate::action::timeout::TimeoutMonitor;
+use crate::{cache::{Cache, TournamentRegistry}, core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor}, state::AppState};
 
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
@@ -170,11 +159,8 @@ struct TournamentManagerInner {
     tournament_meta: Arc<TournamentSchema>,
     tournament_session_state: Mutex<TournamentSession>,
     participants: Cache<TypingSessionSchema>,
-    io: SocketIo,
-    db_pool: DatabaseConnection,
-    session_registry: TypingSessionRegistry,
+    app_state: AppState,
     typing_text: Arc<String>,
-    tournament_registry: TournamentRegistry,
     update_all_notifier: Arc<Notify>,
 }
 
@@ -188,10 +174,7 @@ impl TournamentManager {
     pub fn new(
         tournament_schema: TournamentSchema,
         typing_text_content: String,
-        db_pool: DatabaseConnection,
-        io: SocketIo,
-        session_registry: TypingSessionRegistry,
-        tournament_registry: TournamentRegistry,
+        app_state: AppState,
     ) -> Self {
         info!(
             "Initializing TournamentManager for {}",
@@ -213,11 +196,8 @@ impl TournamentManager {
             tournament_meta: Arc::new(tournament_schema.clone()),
             tournament_session_state: initial_session_state,
             participants: Cache::new(),
-            io: io.clone(),
-            db_pool,
-            session_registry,
+            app_state: app_state.clone(),
             typing_text: typing_text_arc,
-            tournament_registry: tournament_registry.clone(),
             update_all_notifier: update_all_notifier.clone(),
         };
 
@@ -317,7 +297,7 @@ impl TournamentManager {
                 updates: updates_for_all,
             };
             let tournament_room_id = inner_snapshot.tournament_id.to_string();
-            let io_clone = inner_snapshot.io.clone();
+            let io_clone = inner_snapshot.app_state.socket_io.clone();
 
             if let Err(e) = io_clone
                 .to(tournament_room_id.clone())
@@ -357,7 +337,7 @@ impl TournamentManager {
             }
 
             let tournament_id_str = self.inner.tournament_id.to_string();
-            let io_clone = self.inner.io.clone();
+            let io_clone = self.inner.app_state.socket_io.clone();
 
             info!(
                 "Starting tournament {} with {} participants. Emitting update:data.",
@@ -377,7 +357,7 @@ impl TournamentManager {
                 "No participants in tournament {}. Cleaning up.",
                 &*self.inner.tournament_id
             );
-            let registry = self.inner.tournament_registry.clone();
+            let registry = self.inner.app_state.tournament_registry.clone();
             let id_to_clean = self.inner.tournament_id.clone();
             Self::cleanup(registry, &id_to_clean);
         }
@@ -501,7 +481,7 @@ impl TournamentManager {
                     });
             // Update the global session registry
             self.inner
-                .session_registry
+                .app_state.typing_session_registry
                 .set_session(&client_schema.id, participant_session.clone());
 
             // Broadcast "member:joined" to other clients in the room
@@ -511,7 +491,7 @@ impl TournamentManager {
                 participant: new_participant_api_data,
             };
 
-            let io_clone = self.inner.io.clone(); // Arc<Inner>, direct access
+            let io_clone = self.inner.app_state.socket_io.clone(); // Arc<Inner>, direct access
             let tournament_id_str = self.inner.tournament_id.to_string(); // Arc<String>, direct access
 
             // Emit to room, excluding the current socket
@@ -844,7 +824,7 @@ impl TournamentManager {
         );
 
         if self.inner.participants.delete_data(client_id_str).is_some() {
-            self.inner.session_registry.delete_session(client_id_str);
+            self.inner.app_state.typing_session_registry.delete_session(client_id_str);
 
             socket.leave(self.inner.tournament_id.to_string());
 
@@ -852,7 +832,7 @@ impl TournamentManager {
                 client_id: client_id_str.to_string(),
             };
 
-            let io_clone = self.inner.io.clone();
+            let io_clone = self.inner.app_state.socket_io.clone();
             let tournament_id_str = self.inner.tournament_id.to_string();
 
             if let Err(e) = io_clone
@@ -891,7 +871,7 @@ impl TournamentManager {
                         "Last participant left tournament {}. Cleaning up.",
                         self.inner.tournament_id
                     );
-                    // Self::cleanup(self.inner.tournament_registry.clone(), &self.inner.tournament_id);
+                    // Self::cleanup(self.inner.app_state.tournament_registry.clone(), &self.inner.tournament_id);
                     // Note: Automatic cleanup on last leave might be aggressive.
                     // Consider if an empty tournament should persist until its scheduled end or manual cleanup.
                     // For now, commenting out aggressive cleanup.

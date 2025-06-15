@@ -143,7 +143,6 @@ dependencies = [
  "chrono",
  "dotenvy",
  "fake",
- "lazy_static",
  "models",
  "sea-orm",
  "serde",
@@ -169,11 +168,16 @@ dependencies = [
  "chrono",
  "fake",
  "jsonwebtoken",
+ "lazy_static",
  "lettre",
  "models",
  "rand 0.9.1",
  "sea-orm",
  "serde",
+ "serde_json",
+ "socketioxide",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

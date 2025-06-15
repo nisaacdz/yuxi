@@ -1,10 +1,8 @@
 mod action;
-mod cache;
 mod error;
 mod extractor;
 mod init;
 mod middleware;
-mod scheduler;
 mod validation;
 
 pub mod models;
