@@ -21,7 +21,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(users::Entity)
                     .if_not_exists()
-                    .col(ColumnDef::new(users::Column::Id).primary_key())
+                    .col(ColumnDef::new(users::Column::Id).string().primary_key())
                     .col(
                         ColumnDef::new(users::Column::Username)
                             .string()
@@ -56,7 +56,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(tournaments::Entity)
                     .if_not_exists()
-                    .col(ColumnDef::new(tournaments::Column::Id).primary_key())
+                    .col(ColumnDef::new(tournaments::Column::Id).string().primary_key())
                     .col(
                         ColumnDef::new(tournaments::Column::Title)
                             .string()
@@ -133,7 +133,6 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(otp::Column::Email)
                             .string()
-                            .not_null()
                             .primary_key(),
                     )
                     .col(ColumnDef::new(otp::Column::Otp).integer().not_null())
@@ -163,7 +162,6 @@ impl MigrationTrait for Migration {
                     .col(
                         ColumnDef::new(typing_history::Column::Id)
                             .integer()
-                            .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
