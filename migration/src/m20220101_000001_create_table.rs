@@ -155,8 +155,63 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // 6. Create TypingHistorys Table (You'll need to define its columns and FKs)
-        // manager.create_table(Table::create().table(typing_history::Entity)...).await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(typing_history::Entity)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(typing_history::Column::Id)
+                            .integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(typing_history::Column::UserId)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(typing_history::Column::TournamentId)
+                            .string()
+                            .unique_key()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(typing_history::Column::Accuracy)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(typing_history::Column::Speed)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(typing_history::Column::CompletedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-typing_history-user_id")
+                            .from(typing_history::Entity, typing_history::Column::UserId)
+                            .to(users::Entity, users::Column::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::NoAction),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-typing_history-tournament_id")
+                            .from(typing_history::Entity, typing_history::Column::TournamentId)
+                            .to(tournaments::Entity, tournaments::Column::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::NoAction),
+                    )
+                    .to_owned(),
+            )
+            .await?;
         // And add foreign keys from users and tournaments to typing_history if they are one-to-many.
         // Your current relations define typing_history as `has_many`, so typing_history would have `user_id` and `tournament_id` FKs.
 
@@ -167,7 +222,9 @@ impl MigrationTrait for Migration {
         // Drop tables in reverse order of creation, and drop FKs implicitly with tables or explicitly if needed.
         // Drop custom enum type last.
 
-        // manager.drop_table(Table::drop().table(typing_history::Entity).to_owned()).await?;
+        manager
+            .drop_table(Table::drop().table(typing_history::Entity).to_owned())
+            .await?;
         manager
             .drop_table(Table::drop().table(otp::Entity).to_owned())
             .await?;
