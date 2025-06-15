@@ -1,5 +1,5 @@
-mod timeout;
 mod moderation;
+mod timeout;
 
 mod manager;
 

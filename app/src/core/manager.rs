@@ -12,7 +12,11 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::{cache::{Cache, TournamentRegistry}, core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor}, state::AppState};
+use crate::{
+    cache::{Cache, TournamentRegistry},
+    core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor},
+    state::AppState,
+};
 
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
@@ -481,7 +485,8 @@ impl TournamentManager {
                     });
             // Update the global session registry
             self.inner
-                .app_state.typing_session_registry
+                .app_state
+                .typing_session_registry
                 .set_session(&client_schema.id, participant_session.clone());
 
             // Broadcast "member:joined" to other clients in the room
@@ -824,7 +829,10 @@ impl TournamentManager {
         );
 
         if self.inner.participants.delete_data(client_id_str).is_some() {
-            self.inner.app_state.typing_session_registry.delete_session(client_id_str);
+            self.inner
+                .app_state
+                .typing_session_registry
+                .delete_session(client_id_str);
 
             socket.leave(self.inner.tournament_id.to_string());
 

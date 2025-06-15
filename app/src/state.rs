@@ -1,7 +1,10 @@
 use sea_orm::DatabaseConnection;
 use socketioxide::SocketIo;
 
-use crate::{cache::{TournamentRegistry, TypingSessionRegistry}, config::Config};
+use crate::{
+    cache::{TournamentRegistry, TypingSessionRegistry},
+    config::Config,
+};
 
 #[derive(Clone)]
 pub struct AppState {
