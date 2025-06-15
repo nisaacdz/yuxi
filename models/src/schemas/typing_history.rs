@@ -6,7 +6,7 @@ use crate::domains::typing_history;
 #[derive(Serialize)]
 pub struct TypingHistorySchema {
     pub id: i32,
-    pub user_id: i32,
+    pub user_id: String,
     pub tournament_id: String,
     pub accuracy: i32,
     pub speed: i32,
