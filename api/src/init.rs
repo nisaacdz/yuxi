@@ -2,10 +2,10 @@ use axum::Router;
 use axum::http::{HeaderName, HeaderValue, Method, header};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use crate::action::registry::register_tournament_namespace;
-use crate::cache::{TournamentRegistry, TypingSessionRegistry};
+use crate::action::register_tournament_namespace;
 use crate::middleware::extension::client_extension;
 use crate::routers::create_router;
+use app::cache::{TournamentRegistry, TypingSessionRegistry};
 use app::config::Config;
 use app::state::AppState;
 use socketioxide::SocketIo;
@@ -34,16 +34,22 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         )
         .allow_credentials(true);
 
-    let app_state = AppState { conn, config };
+    let tournament_registry = TournamentRegistry::new();
+    let typing_session_registry = TypingSessionRegistry::new();
+    let (socket_layer, socket_io) = SocketIo::new_layer();
 
-    let (socket_layer, io) = SocketIo::new_layer();
+    let app_state = AppState {
+        conn,
+        config,
+        tournament_registry,
+        typing_session_registry,
+        socket_io,
+    };
 
     {
         let app_state = app_state.clone();
-        let tournament_registry = TournamentRegistry::new();
-        let typing_sessions = TypingSessionRegistry::new();
 
-        register_tournament_namespace(io, app_state, tournament_registry, typing_sessions);
+        register_tournament_namespace(app_state);
     }
 
     create_router(app_state.clone())

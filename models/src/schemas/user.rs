@@ -14,11 +14,19 @@ impl ClientSchema {
     pub fn update(&mut self, user_model: Option<users::Model>) {
         self.user = user_model.map(UserSchema::from);
     }
+
+    pub fn from_id(id: String) -> Self {
+        Self {
+            id,
+            user: None,
+            updated: Utc::now(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserSchema {
-    pub id: i32,
+    pub id: String,
     pub username: String,
     pub email: String,
 }

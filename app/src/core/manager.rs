@@ -1,29 +1,26 @@
 use anyhow::Result;
 use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
-    tournament::{TournamentSchema, TournamentSession},
-    typing::TypingSessionSchema,
+    tournament::{TournamentLiveData, TournamentSchema, TournamentSession},
+    typing::{TournamentStatus, TypingSessionSchema},
     user::ClientSchema,
 };
-use sea_orm::DatabaseConnection;
 use serde::Serialize;
-use socketioxide::{
-    SocketIo,
-    extract::{Data, SocketRef},
+use socketioxide::extract::{Data, SocketRef};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
 };
-use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use crate::{
-    action::moderation::FrequencyMonitor,
-    cache::{TournamentRegistry, TypingSessionRegistry},
+    cache::{Cache, TournamentRegistry},
+    core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor},
+    persistence::text,
+    state::AppState,
 };
-
-use app::cache::Cache;
-
-use crate::action::timeout::TimeoutMonitor;
 
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
@@ -35,14 +32,14 @@ const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
 
 #[derive(Serialize, Debug, Clone)]
 struct WsFailurePayload {
-    code: String,
+    code: i32,
     message: String,
 }
 
 impl WsFailurePayload {
-    fn new(code: &str, message: &str) -> Self {
+    fn new(code: i32, message: &str) -> Self {
         Self {
-            code: code.to_string(),
+            code: code,
             message: message.to_string(),
         }
     }
@@ -157,7 +154,7 @@ struct UpdateDataPayload {
     ended_at: Option<DateTime<Utc>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<Option<String>>,
+    text: Option<String>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -170,11 +167,8 @@ struct TournamentManagerInner {
     tournament_meta: Arc<TournamentSchema>,
     tournament_session_state: Mutex<TournamentSession>,
     participants: Cache<TypingSessionSchema>,
-    io: SocketIo,
-    db_pool: DatabaseConnection,
-    session_registry: TypingSessionRegistry,
-    typing_text: Arc<String>,
-    tournament_registry: TournamentRegistry,
+    app_state: AppState,
+    typing_text: RwLock<Arc<String>>,
     update_all_notifier: Arc<Notify>,
 }
 
@@ -185,14 +179,7 @@ pub struct TournamentManager {
 }
 
 impl TournamentManager {
-    pub fn new(
-        tournament_schema: TournamentSchema,
-        typing_text_content: String,
-        db_pool: DatabaseConnection,
-        io: SocketIo,
-        session_registry: TypingSessionRegistry,
-        tournament_registry: TournamentRegistry,
-    ) -> Self {
+    pub fn new(tournament_schema: TournamentSchema, app_state: AppState) -> Self {
         info!(
             "Initializing TournamentManager for {}",
             &tournament_schema.id
@@ -205,7 +192,7 @@ impl TournamentManager {
         ));
 
         let tournament_id_arc = Arc::new(tournament_schema.id.to_string());
-        let typing_text_arc = Arc::new(typing_text_content);
+        let typing_text_arc = Arc::new("".to_string()); // Default empty text
         let update_all_notifier = Arc::new(Notify::new());
 
         let inner_manager_state = TournamentManagerInner {
@@ -213,11 +200,8 @@ impl TournamentManager {
             tournament_meta: Arc::new(tournament_schema.clone()),
             tournament_session_state: initial_session_state,
             participants: Cache::new(),
-            io: io.clone(),
-            db_pool,
-            session_registry,
-            typing_text: typing_text_arc,
-            tournament_registry: tournament_registry.clone(),
+            app_state: app_state.clone(),
+            typing_text: RwLock::new(typing_text_arc),
             update_all_notifier: update_all_notifier.clone(),
         };
 
@@ -317,7 +301,7 @@ impl TournamentManager {
                 updates: updates_for_all,
             };
             let tournament_room_id = inner_snapshot.tournament_id.to_string();
-            let io_clone = inner_snapshot.io.clone();
+            let io_clone = inner_snapshot.app_state.socket_io.clone();
 
             if let Err(e) = io_clone
                 .to(tournament_room_id.clone())
@@ -346,18 +330,26 @@ impl TournamentManager {
                 let mut session_state_guard = self.inner.tournament_session_state.lock().await;
                 session_state_guard.started_at = Some(Utc::now());
 
+                let typing_text = text::generate_text(
+                    self.inner.tournament_meta.text_options.unwrap_or_default(),
+                );
+
+                {
+                    *self.inner.typing_text.write().unwrap() = Arc::new(typing_text);
+                }
+
                 update_data_payload = UpdateDataPayload {
                     title: None,
                     scheduled_for: None,
                     description: None,
                     started_at: session_state_guard.started_at,
                     ended_at: session_state_guard.ended_at,
-                    text: Some(Some(self.inner.typing_text.to_string())),
+                    text: Some(self.inner.typing_text.read().unwrap().to_string()),
                 };
             }
 
             let tournament_id_str = self.inner.tournament_id.to_string();
-            let io_clone = self.inner.io.clone();
+            let io_clone = self.inner.app_state.socket_io.clone();
 
             info!(
                 "Starting tournament {} with {} participants. Emitting update:data.",
@@ -377,7 +369,7 @@ impl TournamentManager {
                 "No participants in tournament {}. Cleaning up.",
                 &*self.inner.tournament_id
             );
-            let registry = self.inner.tournament_registry.clone();
+            let registry = self.inner.app_state.tournament_registry.clone();
             let id_to_clean = self.inner.tournament_id.clone();
             Self::cleanup(registry, &id_to_clean);
         }
@@ -433,7 +425,7 @@ impl TournamentManager {
 
             if !can_join {
                 error!(client_id = %client_schema.id, "Cannot join tournament {}: {}", self.inner.tournament_id, reason);
-                let failure_payload = WsFailurePayload::new("JOIN_FAILED", reason);
+                let failure_payload = WsFailurePayload::new(1004, reason);
                 // Emit failure and return early
                 if socket.emit("join:failure", &failure_payload).is_err() {
                     warn!("Failed to send join:failure to client {}", client_schema.id);
@@ -463,7 +455,7 @@ impl TournamentManager {
                 started_at: t_session_state_guard.started_at,
                 ended_at: t_session_state_guard.ended_at,
                 text: if t_session_state_guard.started_at.is_some() {
-                    Some(self.inner.typing_text.to_string())
+                    Some(self.inner.typing_text.read().unwrap().to_string())
                 } else {
                     None
                 },
@@ -501,7 +493,8 @@ impl TournamentManager {
                     });
             // Update the global session registry
             self.inner
-                .session_registry
+                .app_state
+                .typing_session_registry
                 .set_session(&client_schema.id, participant_session.clone());
 
             // Broadcast "member:joined" to other clients in the room
@@ -511,7 +504,7 @@ impl TournamentManager {
                 participant: new_participant_api_data,
             };
 
-            let io_clone = self.inner.io.clone(); // Arc<Inner>, direct access
+            let io_clone = self.inner.app_state.socket_io.clone(); // Arc<Inner>, direct access
             let tournament_id_str = self.inner.tournament_id.to_string(); // Arc<String>, direct access
 
             // Emit to room, excluding the current socket
@@ -555,14 +548,14 @@ impl TournamentManager {
             return;
         }
 
-        let typing_text = self.inner.typing_text.clone();
+        let typing_text = self.inner.typing_text.read().unwrap().clone();
         let cache = self.inner.participants.clone();
 
         let typing_session = match cache.get_data(&client.id) {
             Some(session) => session,
             None => {
                 warn!(client_id = %client.id, "Typing event received, but no active session found.");
-                let failure_payload = WsFailurePayload::new("AUTH_ERROR", "Client ID not found.");
+                let failure_payload = WsFailurePayload::new(2210, "Client ID not found.");
                 socket.emit("type:failure", &failure_payload).ok();
                 return;
             }
@@ -671,11 +664,11 @@ impl TournamentManager {
                             mc_check.inner.tournament_session_state.lock().await;
 
                         if session_state_guard.ended_at.is_some() {
-                            "ENDED"
+                            TournamentStatus::Ended
                         } else if session_state_guard.started_at.is_some() {
-                            "STARTED"
+                            TournamentStatus::Started
                         } else {
-                            "UPCOMING"
+                            TournamentStatus::Upcoming
                         }
                     };
 
@@ -761,7 +754,7 @@ impl TournamentManager {
                             }
                         } else {
                             let failure_payload =
-                                WsFailurePayload::new("NOT_FOUND", "Your session was not found.");
+                                WsFailurePayload::new(3101, "Your session was not found.");
                             if socket_me.emit("me:failure", &failure_payload).is_err() {
                                 warn!("Failed to send me:failure to client {}", cid_me);
                             }
@@ -815,7 +808,7 @@ impl TournamentManager {
                             started_at: t_session_state_guard.started_at,
                             ended_at: t_session_state_guard.ended_at,
                             text: if t_session_state_guard.started_at.is_some() {
-                                Some(mc_data.inner.typing_text.to_string())
+                                Some(mc_data.inner.typing_text.read().unwrap().to_string())
                             } else {
                                 None
                             },
@@ -844,7 +837,10 @@ impl TournamentManager {
         );
 
         if self.inner.participants.delete_data(client_id_str).is_some() {
-            self.inner.session_registry.delete_session(client_id_str);
+            self.inner
+                .app_state
+                .typing_session_registry
+                .delete_session(client_id_str);
 
             socket.leave(self.inner.tournament_id.to_string());
 
@@ -852,7 +848,7 @@ impl TournamentManager {
                 client_id: client_id_str.to_string(),
             };
 
-            let io_clone = self.inner.io.clone();
+            let io_clone = self.inner.app_state.socket_io.clone();
             let tournament_id_str = self.inner.tournament_id.to_string();
 
             if let Err(e) = io_clone
@@ -891,7 +887,7 @@ impl TournamentManager {
                         "Last participant left tournament {}. Cleaning up.",
                         self.inner.tournament_id
                     );
-                    // Self::cleanup(self.inner.tournament_registry.clone(), &self.inner.tournament_id);
+                    // Self::cleanup(self.inner.app_state.tournament_registry.clone(), &self.inner.tournament_id);
                     // Note: Automatic cleanup on last leave might be aggressive.
                     // Consider if an empty tournament should persist until its scheduled end or manual cleanup.
                     // For now, commenting out aggressive cleanup.
@@ -903,10 +899,8 @@ impl TournamentManager {
                 "Leave/disconnect for client {} but no session found in tournament {}.",
                 client_id_str, self.inner.tournament_id
             );
-            let failure_payload = WsFailurePayload::new(
-                "NOT_IN_TOURNAMENT",
-                "You are not currently in this tournament session.",
-            );
+            let failure_payload =
+                WsFailurePayload::new(2210, "You are not currently in this tournament session.");
             if socket.emit("leave:failure", &failure_payload).is_err() {
                 warn!(
                     "Failed to send leave:failure to {}: {}",
@@ -924,6 +918,23 @@ impl TournamentManager {
         // Takes Arc<String>
         info!("Cleaning up manager for tournament {}", tournament_id);
         tournament_registry.evict(tournament_id.as_str()); // Evict takes &str
+    }
+
+    pub async fn live_data(&self, client_id: &str) -> TournamentLiveData {
+        let participant_count = self.inner.participants.count();
+        let participating = self.inner.participants.contains_key(client_id);
+
+        let (started_at, ended_at) = {
+            let session_state_guard = self.inner.tournament_session_state.lock().await;
+            (session_state_guard.started_at, session_state_guard.ended_at)
+        };
+
+        TournamentLiveData {
+            participant_count,
+            participating,
+            started_at,
+            ended_at,
+        }
     }
 }
 

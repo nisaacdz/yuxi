@@ -4,19 +4,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
 
-use super::{text::TextOptions, user::UserSchema};
+use super::typing::TextOptions;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,
+    pub description: String,
     pub created_at: DateTimeUtc,
-    pub created_by: i32,
+    pub created_by: String,
     pub scheduled_for: DateTimeUtc,
-    pub joined: i32,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
-    pub text_id: Option<i32>,
 }
 
 impl From<tournaments::Model> for TournamentSchema {
@@ -24,13 +23,12 @@ impl From<tournaments::Model> for TournamentSchema {
         Self {
             id: tournament.id,
             title: tournament.title,
+            description: tournament.description,
             created_at: tournament.created_at.to_utc(),
             created_by: tournament.created_by,
             scheduled_for: tournament.scheduled_for.to_utc(),
-            joined: tournament.joined,
             privacy: tournament.privacy,
             text_options: tournament.text_options.map(TextOptions::from_value),
-            text_id: tournament.text_id,
         }
     }
 }
@@ -75,13 +73,26 @@ impl TournamentSession {
 }
 
 #[derive(Serialize)]
-pub struct TournamentUpcomingSchema {
+#[serde(rename_all = "camelCase")]
+pub struct Tournament {
     pub id: String,
     pub title: String,
-    pub created_at: DateTimeUtc,
-    pub created_by: UserSchema,
+    pub creator: String,
     pub scheduled_for: DateTimeUtc,
-    pub joined: i32,
+    pub description: String,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
+    pub started_at: Option<DateTimeUtc>,
+    pub ended_at: Option<DateTimeUtc>,
+    pub participating: bool,
+    pub participant_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TournamentLiveData {
+    pub participant_count: usize,
+    pub participating: bool,
+    pub started_at: Option<DateTimeUtc>,
+    pub ended_at: Option<DateTimeUtc>,
 }

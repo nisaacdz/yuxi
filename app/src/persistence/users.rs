@@ -1,3 +1,4 @@
+use fake::Fake;
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
@@ -16,6 +17,8 @@ use crate::state::AppState;
 
 const OTP_DURATION: TimeDelta = TimeDelta::minutes(10);
 
+const USER_ID_LENGTH: usize = 12;
+
 pub async fn create_user(
     db: &DbConn,
     params: CreateUserParams,
@@ -30,9 +33,16 @@ pub async fn create_user(
         return Err(DbErr::Custom("User already exists".to_string()));
     }
 
+    let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
+
+    let username = fake::faker::internet::en::Username().fake::<String>();
+
     users::ActiveModel {
+        id: Set(id),
         email: Set(params.email),
         passhash: Set(pass_hash),
+        created_at: Set(Utc::now().fixed_offset()),
+        username: Set(username),
         ..Default::default()
     }
     .save(db)
@@ -41,7 +51,7 @@ pub async fn create_user(
 
 pub async fn update_user(
     db: &DbConn,
-    id: i32,
+    id: &str,
     params: UpdateUserParams,
 ) -> Result<users::Model, DbErr> {
     let mut update_query = users::Entity::update_many().filter(users::Column::Id.eq(id));
@@ -70,7 +80,7 @@ pub async fn search_users(db: &DbConn, query: UserQuery) -> Result<Vec<users::Mo
         .await
 }
 
-pub async fn get_user(db: &DbConn, id: i32) -> Result<Option<users::Model>, DbErr> {
+pub async fn get_user(db: &DbConn, id: &str) -> Result<Option<users::Model>, DbErr> {
     users::Entity::find_by_id(id).one(db).await
 }
 

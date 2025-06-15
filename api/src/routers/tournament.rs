@@ -7,11 +7,9 @@ use axum::{
 };
 use sea_orm::TryIntoModel;
 
-use app::persistence::tournaments::{
-    create_tournament, get_tournament, search_upcoming_tournaments,
-};
+use app::persistence::tournaments::{create_tournament, get_tournament, search_tournaments};
 use app::state::AppState;
-use models::queries::PaginationQuery;
+use models::queries::TournamentPaginationQuery;
 use models::schemas::tournament::TournamentSchema;
 use models::{params::tournament::CreateTournamentParams, schemas::user::ClientSchema};
 
@@ -45,9 +43,10 @@ async fn tournaments_post(
 #[axum::debug_handler]
 async fn tournaments_get(
     state: State<AppState>,
-    Query(query): Query<PaginationQuery>,
+    Extension(client): Extension<ClientSchema>,
+    Query(query): Query<TournamentPaginationQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = search_upcoming_tournaments(&state.conn, query)
+    let result = search_tournaments(&state, query, &client.id)
         .await
         .map_err(ApiError::from)?;
 
