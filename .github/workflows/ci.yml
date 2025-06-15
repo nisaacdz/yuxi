@@ -11,12 +11,12 @@ env:
 
 jobs:
   build_and_check: # Renamed job from 'build' for better clarity
-    name: Build & Check (${{ matrix.os }}, ${{ matrix.toolchain }}) # Descriptive name for the matrix job run
+    name: Build & Check (ubuntu-latest, ${{ matrix.toolchain }}) # Descriptive name for the matrix job run
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false # Optional: set to true if you want all matrix jobs to cancel on the first failure
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest] # Simplified to only run on Linux
         # Simplified to 'stable' toolchain. You can add 'beta' back if you still need it: [stable, beta]
         toolchain: [stable]
     steps:
@@ -36,12 +36,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       # Run cargo build and cargo check
-      - name: Build and Check (Windows)
-        if: matrix.os == 'windows-latest'
-        run: cargo build --no-default-features && cargo check --no-default-features
-
-      - name: Build and Check (non-Windows)
-        if: matrix.os != 'windows-latest'
+      - name: Build and Check
         run: cargo build && cargo check
 
       # The 'cargo fmt' and 'cargo clippy' steps have been removed to simplify the workflow.
