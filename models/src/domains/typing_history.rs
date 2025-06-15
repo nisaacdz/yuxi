@@ -7,7 +7,6 @@ pub struct Model {
     pub id: i32,
     pub user_id: i32,
     pub tournament_id: String,
-    pub text_id: i32,
     pub accuracy: i32,
     pub speed: i32,
     pub completed_at: DateTimeWithTimeZone,
