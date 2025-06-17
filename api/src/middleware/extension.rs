@@ -58,8 +58,8 @@ pub async fn client_extension(
 
     let mut res = next.run(req).await;
 
-    res.headers_mut()
-        .insert(HeaderName::from_static("X-Client-ID"), header_value);
+    let header_name = HeaderName::from_static("x-client-id");
 
+    res.headers_mut().insert(header_name, header_value);
     Ok(res)
 }
