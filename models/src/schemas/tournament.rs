@@ -72,7 +72,7 @@ impl TournamentSession {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Tournament {
     pub id: String,

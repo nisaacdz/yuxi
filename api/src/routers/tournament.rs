@@ -49,6 +49,8 @@ async fn tournaments_get(
         .await
         .map_err(ApiError::from)?;
 
+    tracing::debug!("Retrieved tournaments: {:?}", result);
+
     let response = ApiResponse::success("Tournaments retrieved Successfully", Some(result));
 
     Ok(Json(response))

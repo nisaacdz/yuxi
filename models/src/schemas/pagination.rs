@@ -13,7 +13,7 @@ impl<U, T: From<U>> From<Vec<U>> for ListSchema<T> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct PaginatedData<T> {
     pub data: Vec<T>,
     pub page: u64,
