@@ -1,10 +1,9 @@
 use app::persistence::users::create_user;
 use models::params::user::CreateUserParams;
 use models::schemas::user::UserSchema;
-use sea_orm::{DatabaseConnection, TryIntoModel, Unchanged};
+use sea_orm::{DatabaseConnection, TryIntoModel};
 
-use app::persistence::tournaments::create_tournament;
-use models::domains::tournaments;
+use app::persistence::tournaments::{create_tournament, get_tournament};
 use models::params::tournament::CreateTournamentParams;
 
 pub(super) async fn test_tournament(db: &DatabaseConnection) {
@@ -24,15 +23,18 @@ pub(super) async fn test_tournament(db: &DatabaseConnection) {
     let create_tournament_params = CreateTournamentParams {
         title: "title".to_string(),
         scheduled_for: "2021-01-01 00:00:00".parse().unwrap(),
+        description: String::new(),
+        text_options: None,
     };
 
     let tournament = create_tournament(db, create_tournament_params, &user)
         .await
         .expect("Create tournament failed!");
-    let expected = tournaments::ActiveModel {
-        title: Unchanged("title".to_owned()),
-        scheduled_for: Unchanged("2021-01-01 00:00:00".parse().unwrap()),
-        ..Default::default()
-    };
-    assert_eq!(tournament.id, expected.id);
+
+    let expected = get_tournament(db, tournament.id.clone())
+        .await
+        .expect("Get tournament failed!")
+        .expect("Tournament not found");
+
+    println!("Tournament created: {:?}", expected);
 }

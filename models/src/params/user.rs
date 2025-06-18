@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use validator::Validate;
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, Debug)]
 pub struct CreateUserParams {
     #[validate(email)]
     pub email: String,

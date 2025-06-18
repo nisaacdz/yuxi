@@ -19,16 +19,14 @@ const OTP_DURATION: TimeDelta = TimeDelta::minutes(10);
 
 const USER_ID_LENGTH: usize = 12;
 
-pub async fn create_user(
-    db: &DbConn,
-    params: CreateUserParams,
-) -> Result<users::ActiveModel, DbErr> {
+pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users::Model, DbErr> {
     let pass_hash = bcrypt::hash(params.password, 4).unwrap();
 
     let existing_user = users::Entity::find()
         .filter(users::Column::Email.eq(&params.email))
         .one(db)
         .await?;
+
     if existing_user.is_some() {
         return Err(DbErr::Custom("User already exists".to_string()));
     }
@@ -41,11 +39,10 @@ pub async fn create_user(
         id: Set(id),
         email: Set(params.email),
         passhash: Set(pass_hash),
-        created_at: Set(Utc::now().fixed_offset()),
         username: Set(username),
         ..Default::default()
     }
-    .save(db)
+    .insert(db)
     .await
 }
 

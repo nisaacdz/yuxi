@@ -116,7 +116,7 @@ where
     fn should_execute_immediately(&self, inner_data: &Inner<F, Fut>) -> bool {
         // Check stack size condition first (cheaper)
         if inner_data.accumulated_chars.len() >= self.max_process_stack_size {
-            // println!("Trigger: Stack size limit reached.");
+            // ("Trigger: Stack size limit reached.");
             return true;
         }
 

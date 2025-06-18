@@ -1,7 +1,6 @@
-use sea_orm::{DatabaseConnection, Unchanged};
+use sea_orm::DatabaseConnection;
 
-use app::persistence::users::create_user;
-use models::domains::users;
+use app::persistence::users::{create_user, get_user};
 use models::params::user::CreateUserParams;
 
 pub(super) async fn test_user(db: &DatabaseConnection) {
@@ -11,11 +10,10 @@ pub(super) async fn test_user(db: &DatabaseConnection) {
     };
 
     let user = create_user(db, params).await.expect("Create user failed!");
-    let expected = users::ActiveModel {
-        username: Unchanged("test".to_owned()),
-        passhash: Unchanged("".to_owned()),
-        email: Unchanged("".to_owned()),
-        ..Default::default()
-    };
+    let expected = get_user(db, &user.id)
+        .await
+        .expect("Get user failed!")
+        .expect("User not found");
+
     assert_eq!(user, expected);
 }

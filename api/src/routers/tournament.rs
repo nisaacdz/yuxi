@@ -5,7 +5,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use sea_orm::TryIntoModel;
 
 use app::persistence::tournaments::{create_tournament, get_tournament, search_tournaments};
 use app::state::AppState;
@@ -29,8 +28,6 @@ async fn tournaments_post(
     let tournament = create_tournament(&state.conn, params, &user)
         .await
         .map_err(ApiError::from)?;
-
-    let tournament = tournament.try_into_model().unwrap();
 
     let result = ApiResponse::success(
         "Tournament created successfully",

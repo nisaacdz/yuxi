@@ -64,7 +64,7 @@ pub async fn create_tournament(
     db: &DbConn,
     params: CreateTournamentParams,
     user: &UserSchema,
-) -> Result<tournaments::ActiveModel, DbErr> {
+) -> Result<tournaments::Model, DbErr> {
     let id = nanoid::nanoid!(TOURNAMENT_ID_LENGTH, &super::ID_ALPHABET);
 
     tournaments::ActiveModel {
@@ -72,9 +72,10 @@ pub async fn create_tournament(
         title: Set(params.title),
         scheduled_for: Set(params.scheduled_for),
         created_by: Set(user.id.clone()),
+        text_options: Set(params.text_options.map(TextOptions::to_value)),
         ..Default::default()
     }
-    .save(db)
+    .insert(db)
     .await
 }
 

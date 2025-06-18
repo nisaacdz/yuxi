@@ -14,7 +14,6 @@ use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
 };
-use sea_orm::TryIntoModel;
 
 use crate::ApiResponse;
 use crate::error::ApiError;
@@ -59,8 +58,6 @@ pub async fn register_post(
 ) -> Result<impl IntoResponse, ApiError> {
     let user_db = create_user(&state.conn, params)
         .await
-        .map_err(ApiError::from)?
-        .try_into_model()
         .map_err(ApiError::from)?;
 
     let updated_client_state = ClientSchema {

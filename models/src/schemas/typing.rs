@@ -70,7 +70,7 @@ impl TextOptions {
         serde_json::from_value(value).unwrap_or_default()
     }
 
-    pub fn to_value(&self) -> serde_json::Value {
+    pub fn to_value(self) -> serde_json::Value {
         serde_json::to_value(self).unwrap()
     }
 }
