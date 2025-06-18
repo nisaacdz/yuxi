@@ -1,5 +1,10 @@
+use models::domains::sea_orm_active_enums::TournamentPrivacy;
 use models::domains::*;
-use sea_orm_migration::prelude::{extension::postgres::Type, *};
+use sea_orm::{DbBackend, Schema};
+use sea_orm_migration::{
+    prelude::{extension::postgres::Type, *},
+    sea_orm::Iterable,
+};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -7,13 +12,9 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let schema = Schema::new(DbBackend::Postgres);
         manager
-            .create_type(
-                Type::create()
-                    .as_enum(sea_orm_active_enums::TournamentPrivacyEnum)
-                    .values(sea_orm_active_enums::TournamentPrivacyEnum.into_iter())
-                    .to_owned(),
-            )
+            .create_type(schema.create_enum_from_active_enum::<TournamentPrivacy>())
             .await?;
 
         manager
@@ -102,7 +103,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(tournaments::Column::Privacy)
                             .enumeration(
                                 sea_orm_active_enums::TournamentPrivacyEnum,
-                                sea_orm_active_enums::TournamentPrivacyEnum.into_iter(),
+                                sea_orm_active_enums::TournamentPrivacyVariant::iter(),
                             )
                             .not_null(),
                     )
