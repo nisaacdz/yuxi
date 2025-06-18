@@ -4,7 +4,7 @@ use validator::Validate;
 
 use crate::schemas::typing::TextOptions;
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTournamentParams {
     pub title: String,

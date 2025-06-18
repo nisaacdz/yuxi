@@ -1,4 +1,5 @@
 use chrono::Utc;
+use models::domains::sea_orm_active_enums::TournamentPrivacy;
 use models::queries::TournamentPaginationQuery;
 use models::schemas::pagination::PaginatedData;
 use models::schemas::tournament::{Tournament, TournamentSchema};
@@ -70,8 +71,10 @@ pub async fn create_tournament(
     tournaments::ActiveModel {
         id: Set(id),
         title: Set(params.title),
+        description: Set(params.description),
         scheduled_for: Set(params.scheduled_for),
         created_by: Set(user.id.clone()),
+        privacy: Set(TournamentPrivacy::Open),
         text_options: Set(params.text_options.map(TextOptions::to_value)),
         ..Default::default()
     }

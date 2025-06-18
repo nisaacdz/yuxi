@@ -25,6 +25,8 @@ async fn tournaments_post(
         None => return Err(ApiError::from(anyhow!("Unauthorized"))),
     };
 
+    tracing::debug!("Creating tournament with params: {:?}", params);
+
     let tournament = create_tournament(&state.conn, params, &user)
         .await
         .map_err(ApiError::from)?;
