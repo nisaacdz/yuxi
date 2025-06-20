@@ -1,10 +1,11 @@
-use fake::Fake;
 use models::schemas::typing::TextOptions;
+use random_word::Lang;
 
 pub fn generate_text(_options: TextOptions) -> String {
     // Generate a random text based on the provided options in the future
-    let text = fake::faker::lorem::en::Words(54..64)
-        .fake::<Vec<_>>()
+    let text = (0..32)
+        .map(|_| random_word::get(Lang::En))
+        .collect::<Vec<_>>()
         .join(" ");
-    return text;
+    text
 }

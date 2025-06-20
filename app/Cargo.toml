@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 models = { path = "../models" }
 sea-orm = { workspace = true }
+random_word = { workspace = true }
 fake = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }

@@ -36,7 +36,7 @@ pub async fn client_extension(
 
     let client_session = client_session.or_else(|| {
         let x_client_id = headers
-            .get("X-Client-ID")
+            .get("x-client-id")
             .and_then(|header| header.to_str().ok())
             .map(|v| Uuid::parse_str(v).ok())
             .flatten();

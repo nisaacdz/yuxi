@@ -24,6 +24,7 @@ tracing = "0.1.40"
 utoipa = { version = "5.3.1", default-features = false }
 validator = { version = "0.20.0", default-features = false }
 chrono = { version = "0.4.40", features = ["serde"] }
+random_word = { version = "0.5.0", features = ["en"] }
 fake = { version = "4.2.0" }
 bcrypt = { version = "0.17.0" }
 uuid = { version = "1.16.0", features = ["v4"] }
@@ -34,6 +35,7 @@ socketioxide = "0.17.1"
 lazy_static = "1.5.0"
 jsonwebtoken = "9.3.0"
 base64 = "0.22.1"
+bincode = "2.0.1"
 anyhow = "1.0.86"
 lettre = "0.11.17"
 rand = "0.9.1"

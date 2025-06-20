@@ -1,4 +1,3 @@
-use fake::Fake;
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
@@ -19,6 +18,8 @@ const OTP_DURATION: TimeDelta = TimeDelta::minutes(10);
 
 const USER_ID_LENGTH: usize = 12;
 
+const USERNAME_SUFFIX_LENGTH: usize = 6;
+
 pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users::Model, DbErr> {
     let pass_hash = bcrypt::hash(params.password, 4).unwrap();
 
@@ -33,7 +34,7 @@ pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users:
 
     let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
 
-    let username = fake::faker::internet::en::Username().fake::<String>();
+    let username = format!("@User{}", nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET));
 
     users::ActiveModel {
         id: Set(id),

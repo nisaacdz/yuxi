@@ -24,7 +24,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
             header::ACCEPT,
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
-            HeaderName::from_static("x-client"),
+            HeaderName::from_static("x-client-id"),
         ])
         .allow_origin(
             config
