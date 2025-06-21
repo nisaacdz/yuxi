@@ -390,7 +390,12 @@ impl TournamentManager {
         }
     }
 
-    pub async fn connect(self: Self, socket: SocketRef, spectator: bool, noauth: String) -> Result<()> {
+    pub async fn connect(
+        self: Self,
+        socket: SocketRef,
+        spectator: bool,
+        noauth: String,
+    ) -> Result<()> {
         let member_schema = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         let now = Utc::now();

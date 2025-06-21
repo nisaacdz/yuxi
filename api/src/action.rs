@@ -108,7 +108,6 @@ pub fn register_tournament_namespace(app_state: AppState) {
 
             if let Err(e) = manager.connect(socket.clone(), spectator, noauth).await {
                 warn!("Error handling member connection for {}: {}", member.id, e);
-                // Error response already sent within handle_client_connection
                 let _ = socket.disconnect();
             }
         },

@@ -131,19 +131,19 @@ impl TypingSessionRegistry {
         }
     }
 
-    pub fn contains_session(&self, client_id: &str) -> bool {
-        self.sessions.contains_key(client_id)
+    pub fn contains_session(&self, id: &str) -> bool {
+        self.sessions.contains_key(id)
     }
 
-    pub fn get_session(&self, client_id: &str) -> Option<TypingSessionSchema> {
-        self.sessions.get_data(client_id)
+    pub fn get_session(&self, id: &str) -> Option<TypingSessionSchema> {
+        self.sessions.get_data(id)
     }
 
-    pub fn set_session(&self, client_id: &str, session: TypingSessionSchema) {
-        self.sessions.set_data(client_id, session);
+    pub fn set_session(&self, id: &str, session: TypingSessionSchema) {
+        self.sessions.set_data(id, session);
     }
 
-    pub fn delete_session(&self, client_id: &str) -> Option<TypingSessionSchema> {
-        self.sessions.delete_data(client_id)
+    pub fn delete_session(&self, id: &str) -> Option<TypingSessionSchema> {
+        self.sessions.delete_data(id)
     }
 }

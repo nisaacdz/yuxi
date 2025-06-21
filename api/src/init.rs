@@ -55,10 +55,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     create_router(app_state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(socket_layer)
-        .layer(axum::middleware::from_fn_with_state(
-            app_state,
-            extension,
-        ))
+        .layer(axum::middleware::from_fn_with_state(app_state, extension))
         .layer(cors)
 }
 

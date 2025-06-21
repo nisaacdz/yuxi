@@ -34,7 +34,10 @@ pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users:
 
     let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
 
-    let username = format!("@User{}", nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET));
+    let username = format!(
+        "@User{}",
+        nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET)
+    );
 
     users::ActiveModel {
         id: Set(id),

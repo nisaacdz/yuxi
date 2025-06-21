@@ -16,7 +16,7 @@ impl AuthSchema {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TournamentRoomUserProfile { 
+pub struct TournamentRoomUserProfile {
     pub username: String,
 }
 
@@ -30,7 +30,13 @@ impl TournamentRoomMember {
     pub fn from_user(user: &UserSchema, anonymous: bool) -> Self {
         Self {
             id: TournamentRoomMember::get_id(&user.id),
-            user: if anonymous { None } else { Some(TournamentRoomUserProfile { username: user.username.clone() }) }
+            user: if anonymous {
+                None
+            } else {
+                Some(TournamentRoomUserProfile {
+                    username: user.username.clone(),
+                })
+            },
         }
     }
 

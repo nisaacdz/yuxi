@@ -62,9 +62,9 @@ pub async fn register_post(
 
 #[axum::debug_handler]
 pub async fn me_get(
-    Extension(client_state): Extension<AuthSchema>,
+    Extension(auth_state): Extension<AuthSchema>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let response = ApiResponse::success("User data retrieved", Some(client_state));
+    let response = ApiResponse::success("User data retrieved", Some(auth_state));
     Ok(Json(response))
 }
 
