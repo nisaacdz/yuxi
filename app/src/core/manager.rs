@@ -116,7 +116,7 @@ struct TournamentData {
 #[serde(rename_all = "camelCase")]
 struct JoinSuccessPayload {
     data: TournamentData,
-    member_id: String,
+    member: TournamentRoomMember,
     participants: Vec<ParticipantData>,
     noauth: String,
 }
@@ -473,7 +473,7 @@ impl TournamentManager {
 
         let join_success_payload = JoinSuccessPayload {
             data: current_tournament_data,
-            member_id: member_schema.id.clone(),
+            member: member_schema.clone(),
             participants: all_participants_api_data,
             noauth,
         };
