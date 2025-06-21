@@ -1,26 +1,42 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::domains::users;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ClientSchema {
-    pub id: String,
+pub struct AuthSchema {
     pub user: Option<UserSchema>,
-    pub updated: DateTime<Utc>,
 }
 
-impl ClientSchema {
-    pub fn update(&mut self, user_model: Option<users::Model>) {
-        self.user = user_model.map(UserSchema::from);
+impl AuthSchema {
+    pub fn new(user: Option<users::Model>) -> Self {
+        Self {
+            user: user.map(UserSchema::from),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TournamentRoomUserProfile { 
+    pub username: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TournamentRoomMember {
+    pub id: String,
+    pub user: Option<TournamentRoomUserProfile>,
+}
+
+impl TournamentRoomMember {
+    pub fn from_user(user: &UserSchema, anonymous: bool) -> Self {
+        Self {
+            id: TournamentRoomMember::get_id(&user.id),
+            user: if anonymous { None } else { Some(TournamentRoomUserProfile { username: user.username.clone() }) }
+        }
     }
 
-    pub fn from_id(id: String) -> Self {
-        Self {
-            id,
-            user: None,
-            updated: Utc::now(),
-        }
+    // TODO implement a more secure transformation
+    pub fn get_id(user_id: &str) -> String {
+        user_id.to_owned()
     }
 }
 
@@ -37,19 +53,6 @@ impl From<users::Model> for UserSchema {
             id: user.id,
             username: user.username,
             email: user.email,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct UserListSchema {
-    pub users: Vec<UserSchema>,
-}
-
-impl From<Vec<users::Model>> for UserListSchema {
-    fn from(users: Vec<users::Model>) -> Self {
-        Self {
-            users: users.into_iter().map(UserSchema::from).collect(),
         }
     }
 }

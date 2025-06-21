@@ -1,26 +1,29 @@
 use anyhow::anyhow;
 use axum::{
     Extension, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     response::IntoResponse,
     routing::{get, post},
 };
 
 use app::persistence::tournaments::{create_tournament, get_tournament, search_tournaments};
 use app::state::AppState;
-use models::queries::TournamentPaginationQuery;
+use models::params::tournament::CreateTournamentParams;
 use models::schemas::tournament::TournamentSchema;
-use models::{params::tournament::CreateTournamentParams, schemas::user::ClientSchema};
+use models::{queries::TournamentPaginationQuery, schemas::user::AuthSchema};
 
-use crate::extractor::{Json, Valid};
 use crate::{ApiResponse, error::ApiError};
+use crate::{
+    decode_noauth,
+    extractor::{Json, Valid},
+};
 
 async fn tournaments_post(
     state: State<AppState>,
-    Extension(client): Extension<ClientSchema>,
+    Extension(auth_state): Extension<AuthSchema>,
     Valid(Json(params)): Valid<Json<CreateTournamentParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = match client.user {
+    let user = match auth_state.user {
         Some(user) => user,
         None => return Err(ApiError::from(anyhow!("Unauthorized"))),
     };
@@ -42,12 +45,22 @@ async fn tournaments_post(
 #[axum::debug_handler]
 async fn tournaments_get(
     state: State<AppState>,
-    Extension(client): Extension<ClientSchema>,
+    Extension(auth_state): Extension<AuthSchema>,
     Query(query): Query<TournamentPaginationQuery>,
+    request: Request,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = search_tournaments(&state, query, &client.id)
-        .await
-        .map_err(ApiError::from)?;
+    let noauth = request.headers().get("x-noauth-unique");
+    let member_id = noauth.map(|value| decode_noauth(value.as_ref())).flatten();
+    let member_id = member_id.as_ref().map(|v| v.as_ref());
+
+    let result = search_tournaments(
+        &state,
+        query,
+        auth_state.user.as_ref().map(|u| u.id.as_str()),
+        member_id,
+    )
+    .await
+    .map_err(ApiError::from)?;
 
     let response = ApiResponse::success("Tournaments retrieved Successfully", Some(result));
 

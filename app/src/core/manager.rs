@@ -3,7 +3,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use models::schemas::{
     tournament::{TournamentLiveData, TournamentSchema, TournamentSession},
     typing::{TournamentStatus, TypingSessionSchema},
-    user::ClientSchema,
+    user::TournamentRoomMember,
 };
 use serde::Serialize;
 use socketioxide::extract::{Data, SocketRef};
@@ -48,7 +48,7 @@ impl WsFailurePayload {
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ParticipantData {
-    client: ClientSchema,
+    member: TournamentRoomMember,
     current_position: usize,
     correct_position: usize,
     total_keystrokes: i32,
@@ -81,7 +81,7 @@ struct PartialParticipantData {
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PartialParticipantDataForUpdate {
-    client_id: String,
+    member_id: String,
     updates: PartialParticipantData,
 }
 
@@ -116,8 +116,9 @@ struct TournamentData {
 #[serde(rename_all = "camelCase")]
 struct JoinSuccessPayload {
     data: TournamentData,
-    client_id: String,
+    member_id: String,
     participants: Vec<ParticipantData>,
+    noauth: String,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -129,7 +130,7 @@ struct MemberJoinedPayload {
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 struct MemberLeftPayload {
-    client_id: String,
+    member_id: String,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -287,7 +288,7 @@ impl TournamentManager {
                         ended_at: session_data.ended_at,
                     };
                     PartialParticipantDataForUpdate {
-                        client_id: session_data.client.id.clone(),
+                        member_id: session_data.member.id.clone(),
                         updates: partial_data,
                     }
                 })
@@ -378,7 +379,7 @@ impl TournamentManager {
     // Helper to map TypingSessionSchema to the API's ParticipantData
     fn map_session_to_api_participant_data(session: &TypingSessionSchema) -> ParticipantData {
         ParticipantData {
-            client: session.client.clone(),
+            member: session.member.clone(),
             current_position: session.current_position,
             correct_position: session.correct_position,
             total_keystrokes: session.total_keystrokes,
@@ -389,18 +390,13 @@ impl TournamentManager {
         }
     }
 
-    pub async fn connect(self: Self, socket: SocketRef, spectator: bool) -> Result<()> {
-        let client_schema = socket
-            .req_parts()
-            .extensions
-            .get::<ClientSchema>()
-            .ok_or_else(|| anyhow::anyhow!("ClientSchema not found in socket extensions"))?
-            .clone();
+    pub async fn connect(self: Self, socket: SocketRef, spectator: bool, noauth: String) -> Result<()> {
+        let member_schema = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         let now = Utc::now();
 
-        // Check join conditions only if the client is not already a participant
-        if !self.inner.participants.contains_key(&client_schema.id) {
+        // Check join conditions only if the user is not already a participant
+        if !self.inner.participants.contains_key(&member_schema.id) {
             let started_at = {
                 // Scope for the lock guard
                 let session_state_guard = self.inner.tournament_session_state.lock().await;
@@ -424,19 +420,19 @@ impl TournamentManager {
             }
 
             if !can_join {
-                error!(client_id = %client_schema.id, "Cannot join tournament {}: {}", self.inner.tournament_id, reason);
+                error!(member_id = %member_schema.id, "Cannot join tournament {}: {}", self.inner.tournament_id, reason);
                 let failure_payload = WsFailurePayload::new(1004, reason);
                 // Emit failure and return early
                 if socket.emit("join:failure", &failure_payload).is_err() {
-                    warn!("Failed to send join:failure to client {}", client_schema.id);
+                    warn!("Failed to send join:failure to member {}", member_schema.id);
                 }
                 return Err(anyhow::anyhow!(reason));
             }
         }
 
         info!(
-            "Handling connection for client {} to tournament {}",
-            &client_schema.id, self.inner.tournament_id
+            "Handling connection for member {} to tournament {}",
+            &member_schema.id, self.inner.tournament_id
         );
 
         socket.join(self.inner.tournament_id.to_string());
@@ -472,12 +468,13 @@ impl TournamentManager {
 
         let join_success_payload = JoinSuccessPayload {
             data: current_tournament_data,
-            client_id: client_schema.id.clone(),
+            member_id: member_schema.id.clone(),
             participants: all_participants_api_data,
+            noauth,
         };
         // Emit join:success to the current socket
         if socket.emit("join:success", &join_success_payload).is_err() {
-            warn!("Failed to send join:success to client {}", client_schema.id);
+            warn!("Failed to send join:success to member {}", member_schema.id);
         }
 
         if !spectator {
@@ -485,9 +482,9 @@ impl TournamentManager {
             let participant_session =
                 self.inner
                     .participants
-                    .get_or_insert(&client_schema.id, || {
+                    .get_or_insert(&member_schema.id, || {
                         TypingSessionSchema::new(
-                            client_schema.clone(),
+                            member_schema.clone(),
                             self.inner.tournament_id.to_string(),
                         )
                     });
@@ -495,9 +492,9 @@ impl TournamentManager {
             self.inner
                 .app_state
                 .typing_session_registry
-                .set_session(&client_schema.id, participant_session.clone());
+                .set_session(&member_schema.id, participant_session.clone());
 
-            // Broadcast "member:joined" to other clients in the room
+            // Broadcast "typist:joined" to other members in the room
             let new_participant_api_data =
                 Self::map_session_to_api_participant_data(&participant_session);
             let member_joined_payload = MemberJoinedPayload {
@@ -511,10 +508,10 @@ impl TournamentManager {
             if let Err(e) = io_clone
                 .to(tournament_id_str)
                 .except(socket.id)
-                .emit("member:joined", &member_joined_payload)
+                .emit("typist:joined", &member_joined_payload)
                 .await
             {
-                warn!("Failed to broadcast member:joined: {}", e);
+                warn!("Failed to broadcast typist:joined: {}", e);
             }
         }
 
@@ -523,8 +520,8 @@ impl TournamentManager {
             .register_socket_listeners(socket.clone(), spectator);
 
         info!(
-            "Client {} connected to tournament {}",
-            &client_schema.id, self.inner.tournament_id
+            "Member {} connected to tournament {}",
+            &member_schema.id, self.inner.tournament_id
         );
 
         Ok(())
@@ -541,21 +538,21 @@ impl TournamentManager {
     /// * `socket` - The user's socket connection reference.
     /// * `typed_chars` - A vector of characters typed by the user since the last update.
     pub async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>) {
-        let client = socket.req_parts().extensions.get::<ClientSchema>().unwrap();
+        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         if typed_chars.is_empty() {
-            warn!(client_id = %client.id, "Received empty typing event. Ignoring.");
+            warn!(member_id = %member.id, "Received empty typing event. Ignoring.");
             return;
         }
 
         let typing_text = self.inner.typing_text.read().unwrap().clone();
         let cache = self.inner.participants.clone();
 
-        let typing_session = match cache.get_data(&client.id) {
+        let typing_session = match cache.get_data(&member.id) {
             Some(session) => session,
             None => {
-                warn!(client_id = %client.id, "Typing event received, but no active session found.");
-                let failure_payload = WsFailurePayload::new(2210, "Client ID not found.");
+                warn!(member_id = %member.id, "Typing event received, but no active session found.");
+                let failure_payload = WsFailurePayload::new(2210, "Member ID not found.");
                 socket.emit("type:failure", &failure_payload).ok();
                 return;
             }
@@ -568,7 +565,7 @@ impl TournamentManager {
         let updated_session =
             process_typing_input(typing_session, typed_chars, challenge_text_bytes, now);
 
-        cache.set_data(&updated_session.client.id, updated_session.clone());
+        cache.set_data(&updated_session.member.id, updated_session.clone());
 
         let changes = PartialParticipantData {
             current_position: Some(updated_session.current_position),
@@ -585,19 +582,14 @@ impl TournamentManager {
         };
 
         if let Err(e) = socket.emit("update:me", &update_me_payload) {
-            warn!("Failed to send update:me to {}: {}", client.id, e);
+            warn!("Failed to send update:me to {}: {}", member.id, e);
         }
 
         self.inner.update_all_notifier.notify_one();
     }
 
     fn register_socket_listeners(self: Self, socket: SocketRef, spectator: bool) {
-        let client = socket
-            .req_parts()
-            .extensions
-            .get::<ClientSchema>()
-            .expect("ClientSchema not found in socket extensions during listener registration")
-            .clone();
+        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         if !spectator {
             // wait period before processing a new character
@@ -609,7 +601,7 @@ impl TournamentManager {
             // but will likely be instantaneous under normal circumstances
             let max_process_stack_size = MAX_PROCESS_STACK_SIZE;
             let cleanup_wait_duration = INACTIVITY_TIMEOUT_DURATION;
-            let client = client.clone();
+            let member = member.clone();
             let timeout_monitor = {
                 let socket = socket.clone();
 
@@ -617,7 +609,7 @@ impl TournamentManager {
 
                 Arc::new(TimeoutMonitor::new(
                     async move || {
-                        handle_timeout(&client, socket).await;
+                        handle_timeout(&member, socket).await;
                     },
                     after_timeout_fn,
                     cleanup_wait_duration,
@@ -655,7 +647,7 @@ impl TournamentManager {
                 let socket_check = s.clone();
                 async move {
                     info!(
-                        "Client {} requesting tournament status check for {}",
+                        "Member {} requesting tournament status check for {}",
                         socket_check.id, mc_check.inner.tournament_id
                     );
 
@@ -679,7 +671,7 @@ impl TournamentManager {
                         .is_err()
                     {
                         warn!(
-                            "Failed to send check:success to client {} for tournament {}",
+                            "Failed to send check:success to member {} for tournament {}",
                             socket_check.id, mc_check.inner.tournament_id
                         );
                     }
@@ -689,14 +681,14 @@ impl TournamentManager {
 
         socket.on("leave", {
             let manager_clone_leave = self.clone();
-            let client_leave = client.clone();
+            let member_leave = member.clone();
             move |s: SocketRef| {
                 let mc_leave = manager_clone_leave.clone();
-                let cid_leave = client_leave.id.clone();
+                let cid_leave = member_leave.id.clone();
                 let socket_leave = s.clone();
                 async move {
                     info!(
-                        "Client {} is attempting to leave tournament {}",
+                        "Member {} is attempting to leave tournament {}",
                         cid_leave, mc_leave.inner.tournament_id
                     );
                     if !spectator {
@@ -705,7 +697,7 @@ impl TournamentManager {
                             .await
                             .map_err(|e| {
                                 warn!(
-                                    "Error during leave handling for client {}: {}",
+                                    "Error during leave handling for member {}: {}",
                                     cid_leave, e
                                 );
                             })
@@ -719,16 +711,11 @@ impl TournamentManager {
             let manager_clone_disconnect = self.clone();
             move |s: SocketRef| {
                 let mc_disconnect = manager_clone_disconnect.clone();
-                let client = s
-                    .req_parts()
-                    .extensions
-                    .get::<ClientSchema>()
-                    .expect("ClientSchema not found in socket extensions during disconnect")
-                    .clone();
+                let member = s.extensions.get::<TournamentRoomMember>().unwrap();
                 async move {
                     info!(
-                        "Client {} disconnected from tournament {}",
-                        client.id, mc_disconnect.inner.tournament_id
+                        "Member {} disconnected from tournament {}",
+                        member.id, mc_disconnect.inner.tournament_id
                     );
                 }
             }
@@ -739,24 +726,21 @@ impl TournamentManager {
                 let manager_clone_me = self.clone();
                 move |s: SocketRef| {
                     let mc_me = manager_clone_me.clone();
-                    let client_me =
-                        s.req_parts().extensions.get::<ClientSchema>().expect(
-                            "ClientSchema not found in socket extensions during disconnect",
-                        );
-                    let cid_me = client_me.id.clone();
+                    let member_me = s.extensions.get::<TournamentRoomMember>().unwrap();
+                    let cid_me = member_me.id;
                     let socket_me = s.clone();
                     async move {
                         if let Some(session_data) = mc_me.inner.participants.get_data(&cid_me) {
                             let participant_data =
                                 Self::map_session_to_api_participant_data(&session_data);
                             if socket_me.emit("me:success", &participant_data).is_err() {
-                                warn!("Failed to send me:success to client {}", cid_me);
+                                warn!("Failed to send me:success to member {}", cid_me);
                             }
                         } else {
                             let failure_payload =
                                 WsFailurePayload::new(3101, "Your session was not found.");
                             if socket_me.emit("me:failure", &failure_payload).is_err() {
-                                warn!("Failed to send me:failure to client {}", cid_me);
+                                warn!("Failed to send me:failure to member {}", cid_me);
                             }
                         }
                     }
@@ -781,7 +765,7 @@ impl TournamentManager {
                         .emit("all:success", &all_participants_api_data)
                         .is_err()
                     {
-                        warn!("Failed to send all:success to client");
+                        warn!("Failed to send all:success to member");
                     }
                 }
             }
@@ -819,7 +803,7 @@ impl TournamentManager {
                         .is_err()
                     {
                         // Emitting specific "data:success"
-                        warn!("Failed to send data:success to client");
+                        warn!("Failed to send data:success to member");
                     }
                 }
             }
@@ -828,24 +812,24 @@ impl TournamentManager {
 
     async fn handle_participant_leave(
         self: &Self,
-        client_id_str: &str,
+        member_id_str: &str,
         socket: &SocketRef,
     ) -> Result<()> {
         info!(
-            "Handling leave for client {} in tournament {}",
-            client_id_str, self.inner.tournament_id
+            "Handling leave for member {} in tournament {}",
+            member_id_str, self.inner.tournament_id
         );
 
-        if self.inner.participants.delete_data(client_id_str).is_some() {
+        if self.inner.participants.delete_data(member_id_str).is_some() {
             self.inner
                 .app_state
                 .typing_session_registry
-                .delete_session(client_id_str);
+                .delete_session(member_id_str);
 
             socket.leave(self.inner.tournament_id.to_string());
 
             let member_left_payload = MemberLeftPayload {
-                client_id: client_id_str.to_string(),
+                member_id: member_id_str.to_string(),
             };
 
             let io_clone = self.inner.app_state.socket_io.clone();
@@ -854,12 +838,12 @@ impl TournamentManager {
             if let Err(e) = io_clone
                 .to(tournament_id_str.clone())
                 .except(socket.id)
-                .emit("member:left", &member_left_payload)
+                .emit("typist:left", &member_left_payload)
                 .await
             {
                 warn!(
-                    "Failed to broadcast member:left for {}: {}",
-                    client_id_str, e
+                    "Failed to broadcast typist:left for {}: {}",
+                    member_id_str, e
                 );
             }
 
@@ -872,7 +856,7 @@ impl TournamentManager {
             {
                 warn!(
                     "Failed to send leave:success to {}: {}",
-                    client_id_str, socket.id
+                    member_id_str, socket.id
                 );
             }
 
@@ -896,23 +880,23 @@ impl TournamentManager {
             Ok(())
         } else {
             warn!(
-                "Leave/disconnect for client {} but no session found in tournament {}.",
-                client_id_str, self.inner.tournament_id
+                "Leave/disconnect for member {} but no session found in tournament {}.",
+                member_id_str, self.inner.tournament_id
             );
             let failure_payload =
                 WsFailurePayload::new(2210, "You are not currently in this tournament session.");
             if socket.emit("leave:failure", &failure_payload).is_err() {
                 warn!(
                     "Failed to send leave:failure to {}: {}",
-                    client_id_str, socket.id
+                    member_id_str, socket.id
                 );
             }
-            Err(anyhow::anyhow!("Client session not found for leave"))
+            Err(anyhow::anyhow!("Member session not found for leave"))
         }
     }
 
     // broadcast_tournament_update is removed as updates are now granular:
-    // join:success, member:joined, member:left, update:me, update:all, update:data
+    // join:success, typist:joined, typist:left, update:me, update:all, update:data
 
     pub fn cleanup(tournament_registry: TournamentRegistry, tournament_id: &Arc<String>) {
         // Takes Arc<String>
@@ -920,9 +904,9 @@ impl TournamentManager {
         tournament_registry.evict(tournament_id.as_str()); // Evict takes &str
     }
 
-    pub async fn live_data(&self, client_id: &str) -> TournamentLiveData {
+    pub async fn live_data(&self, member_id: &str) -> TournamentLiveData {
         let participant_count = self.inner.participants.count();
-        let participating = self.inner.participants.contains_key(client_id);
+        let participating = self.inner.participants.contains_key(&member_id);
 
         let (started_at, ended_at) = {
             let session_state_guard = self.inner.tournament_session_state.lock().await;
@@ -944,10 +928,10 @@ impl TournamentManager {
 ///
 /// # Arguments
 ///
-/// * `client` - The client information of the user who timed out.
+/// * `member` - The member information of the user who timed out.
 /// * `socket` - The user's socket connection reference.
-pub async fn handle_timeout(client: &ClientSchema, _socket: SocketRef) {
-    info!(client_id = %client.id, "Handling inactivity timeout");
+pub async fn handle_timeout(member: &TournamentRoomMember, _socket: SocketRef) {
+    info!(member_id = %member.id, "Handling inactivity timeout");
 }
 
 fn process_typing_input(
@@ -964,7 +948,7 @@ fn process_typing_input(
 
     for current_char in typed_chars {
         if session.correct_position >= text_len && session.ended_at.is_some() {
-            warn!(user_id=%session.client.id, "Received typing input after session ended. Ignoring.");
+            warn!(user_id=%session.member.id, "Received typing input after session ended. Ignoring.");
             break;
         }
 
@@ -999,7 +983,7 @@ fn process_typing_input(
         if session.correct_position == text_len && session.ended_at.is_none() {
             session.ended_at = Some(now);
             session.current_position = session.correct_position;
-            info!(client_id = %session.client.id, tournament_id = %session.tournament_id, "User finished typing challenge");
+            info!(member_id = %session.member.id, tournament_id = %session.tournament_id, "User finished typing challenge");
             break;
         }
     }

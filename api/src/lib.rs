@@ -10,6 +10,7 @@ pub mod routers;
 
 pub use init::{setup_config, setup_db, setup_router};
 use serde::Serialize;
+use uuid::Uuid;
 
 /// A generic structure for API responses sent over WebSockets.
 #[derive(Serialize, Debug)]
@@ -57,4 +58,12 @@ impl<T: Serialize> ApiResponse<T> {
     pub fn into_data(self) -> Option<T> {
         if self.success { self.data } else { None }
     }
+}
+
+pub fn decode_noauth(value: &[u8]) -> Option<String> {
+    Uuid::try_parse_ascii(value).map(|id| id.to_string()).ok()
+}
+
+pub fn encode_noauth(member_id: &str) -> String {
+    member_id.to_owned()
 }

@@ -7,9 +7,8 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Utc;
 use models::params::user::{ForgotPasswordBody, ResetPasswordBody};
-use models::schemas::user::{ClientSchema, LoginSchema, TokensSchema};
+use models::schemas::user::{AuthSchema, LoginSchema, TokensSchema};
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
@@ -22,21 +21,13 @@ use crate::extractor::Json;
 #[axum::debug_handler]
 pub async fn login_post(
     State(state): State<AppState>,
-    Extension(client): Extension<ClientSchema>,
     Json(params): Json<LoginUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
     let user = login_user(&state.conn, params)
         .await
         .map_err(ApiError::from)?;
 
-    let access = encode_data(
-        &state.config,
-        &ClientSchema {
-            id: client.id.clone(),
-            user: Some(UserSchema::from(user.clone())),
-            updated: Utc::now(),
-        },
-    )?;
+    let access = encode_data(&state.config, &UserSchema::from(user.clone()))?;
 
     let user_schema = UserSchema::from(user);
     let tokens = TokensSchema { access };
@@ -53,25 +44,16 @@ pub async fn login_post(
 #[axum::debug_handler]
 pub async fn register_post(
     State(state): State<AppState>,
-    Extension(client): Extension<ClientSchema>,
     Json(params): Json<CreateUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user_db = create_user(&state.conn, params)
+    let user = create_user(&state.conn, params)
         .await
+        .map(UserSchema::from)
         .map_err(ApiError::from)?;
 
-    let updated_client_state = ClientSchema {
-        id: client.id,
-        user: Some(UserSchema::from(user_db.clone())),
-        updated: Utc::now(),
-    };
-
-    let access = encode_data(&state.config, &updated_client_state)?;
+    let access = encode_data(&state.config, &user)?;
     let tokens = TokensSchema { access };
-    let login_response = LoginSchema {
-        user: UserSchema::from(user_db),
-        tokens,
-    };
+    let login_response = LoginSchema { user, tokens };
 
     let response = ApiResponse::success("Registration successful", Some(login_response));
 
@@ -80,7 +62,7 @@ pub async fn register_post(
 
 #[axum::debug_handler]
 pub async fn me_get(
-    Extension(client_state): Extension<ClientSchema>,
+    Extension(client_state): Extension<AuthSchema>,
 ) -> Result<impl IntoResponse, ApiError> {
     let response = ApiResponse::success("User data retrieved", Some(client_state));
     Ok(Json(response))

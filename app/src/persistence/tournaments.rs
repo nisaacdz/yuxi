@@ -4,7 +4,7 @@ use models::queries::TournamentPaginationQuery;
 use models::schemas::pagination::PaginatedData;
 use models::schemas::tournament::{Tournament, TournamentSchema};
 use models::schemas::typing::TextOptions;
-use models::schemas::user::UserSchema;
+use models::schemas::user::{TournamentRoomMember, UserSchema};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set,
@@ -20,7 +20,8 @@ const TOURNAMENT_ID_LENGTH: usize = 24;
 pub async fn parse_tournament(
     tournament: tournaments::Model,
     app_state: &AppState,
-    client_id: &str,
+    user_id: Option<&str>,
+    member_id: Option<&str>,
 ) -> Result<Tournament, DbErr> {
     let created_by = users::Entity::find_by_id(tournament.created_by)
         .one(&app_state.conn)
@@ -28,10 +29,14 @@ pub async fn parse_tournament(
         .ok_or_else(|| DbErr::Custom("Tournament creator not found".into()))?;
     let manager = app_state.tournament_registry.get(&tournament.id);
 
-    let live_data = if let Some(manager) = manager {
-        Some(manager.live_data(client_id).await)
-    } else {
-        None
+    let live_data = match (manager, user_id, member_id) {
+        (Some(manager), Some(user_id), _) => Some(
+            manager
+                .live_data(&TournamentRoomMember::get_id(user_id))
+                .await,
+        ),
+        (Some(manager), _, Some(member_id)) => Some(manager.live_data(member_id).await),
+        _ => None,
     };
 
     let mut started_at = tournament.started_at.map(|v| v.to_utc());
@@ -85,7 +90,8 @@ pub async fn create_tournament(
 pub async fn search_tournaments(
     app_state: &AppState,
     query: TournamentPaginationQuery,
-    client_id: &str,
+    user_id: Option<&str>,
+    member_id: Option<&str>,
 ) -> Result<PaginatedData<Tournament>, DbErr> {
     let limit = query.limit.unwrap_or(15);
     let page = query.page.unwrap_or(1);
@@ -136,7 +142,7 @@ pub async fn search_tournaments(
             .limit(limit);
 
         for m in sql_query.all(&app_state.conn).await?.into_iter() {
-            res.push(parse_tournament(m, app_state, client_id).await?)
+            res.push(parse_tournament(m, app_state, user_id, member_id).await?)
         }
         res
     };

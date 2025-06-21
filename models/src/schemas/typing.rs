@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::user::ClientSchema;
+use crate::schemas::user::TournamentRoomMember;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TypingSessionSchema {
-    pub client: ClientSchema,
+    pub member: TournamentRoomMember,
     pub tournament_id: String,
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
@@ -17,9 +17,9 @@ pub struct TypingSessionSchema {
 }
 
 impl TypingSessionSchema {
-    pub fn new(client: ClientSchema, tournament_id: String) -> Self {
+    pub fn new(member: TournamentRoomMember, tournament_id: String) -> Self {
         Self {
-            client,
+            member,
             tournament_id,
             started_at: None,
             ended_at: None,

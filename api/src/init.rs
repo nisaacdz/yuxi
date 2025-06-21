@@ -3,7 +3,7 @@ use axum::http::{HeaderName, HeaderValue, Method, header};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use crate::action::register_tournament_namespace;
-use crate::middleware::extension::client_extension;
+use crate::middleware::extension::extension;
 use crate::routers::create_router;
 use app::cache::{TournamentRegistry, TypingSessionRegistry};
 use app::config::Config;
@@ -24,7 +24,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
             header::ACCEPT,
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
-            HeaderName::from_static("x-client-id"),
+            HeaderName::from_static("x-noauth-unique"),
         ])
         .allow_origin(
             config
@@ -57,7 +57,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         .layer(socket_layer)
         .layer(axum::middleware::from_fn_with_state(
             app_state,
-            client_extension,
+            extension,
         ))
         .layer(cors)
 }

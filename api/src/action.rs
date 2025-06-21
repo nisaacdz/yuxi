@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
 use app::{core::TournamentManager, state::AppState};
-use models::schemas::user::ClientSchema;
-use socketioxide::extract::SocketRef;
+use models::schemas::user::{AuthSchema, TournamentRoomMember};
+use socketioxide::extract::{HttpExtension, SocketRef};
 use tracing::{error, info, warn};
+use uuid::Uuid;
+
+use crate::{decode_noauth, encode_noauth};
 
 pub fn register_tournament_namespace(app_state: AppState) {
-    let _ = app_state
-        .socket_io
-        .clone()
-        .ns("/", async move |socket: SocketRef| {
+    let _ = app_state.socket_io.clone().ns(
+        "/",
+        async move |HttpExtension(auth_state): HttpExtension<AuthSchema>, socket: SocketRef| {
             let query_string = socket.req_parts().uri.query().unwrap_or_default();
             let params_map =
                 url::form_urlencoded::parse(query_string.as_bytes()).collect::<HashMap<_, _>>();
@@ -31,14 +33,42 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 .and_then(|val_str| val_str.parse::<bool>().ok())
                 .unwrap_or(false);
 
+            let anonymous: bool = params_map
+                .get("anonymous")
+                .and_then(|val_str| val_str.parse::<bool>().ok())
+                .unwrap_or(false);
+
+            let mut noauth = String::new();
+
+            let tournament_room_member = match &auth_state.user {
+                Some(user) => TournamentRoomMember::from_user(user, anonymous),
+                None => match socket
+                    .req_parts()
+                    .headers
+                    .get("x-noauth-unique")
+                    .map(|value| decode_noauth(value.as_ref()))
+                    .flatten()
+                {
+                    Some(id) => TournamentRoomMember { id, user: None },
+                    None => {
+                        let id = Uuid::new_v4().to_string();
+                        noauth = encode_noauth(&id);
+                        TournamentRoomMember { id, user: None }
+                    }
+                },
+            };
+
+            // socket. insert into extensions
+            socket.extensions.insert(tournament_room_member);
+
             let app_state = app_state.clone();
             let socket = socket.clone();
 
-            let client = match socket.req_parts().extensions.get::<ClientSchema>() {
-                Some(client) => client.clone(),
+            let member = match socket.extensions.get::<TournamentRoomMember>() {
+                Some(member) => member.clone(),
                 None => {
                     error!(
-                        "ClientSchema not found in socket extensions for ID: {}",
+                        "TournamentRoomMember not found in socket extensions for ID: {}",
                         socket.id
                     );
                     let _ = socket.disconnect();
@@ -47,8 +77,8 @@ pub fn register_tournament_namespace(app_state: AppState) {
             };
 
             info!(
-                "Socket.IO connected for tournament '{}': Client: {:?}",
-                tournament_id, client.id
+                "Socket.IO connected for tournament '{}': Member: {:?}",
+                tournament_id, member.id
             );
 
             let tournament = match app::persistence::tournaments::get_tournament(
@@ -76,10 +106,11 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 TournamentManager::new(tournament, app_state)
             });
 
-            if let Err(e) = manager.connect(socket.clone(), spectator).await {
-                warn!("Error handling client connection for {}: {}", client.id, e);
+            if let Err(e) = manager.connect(socket.clone(), spectator, noauth).await {
+                warn!("Error handling member connection for {}: {}", member.id, e);
                 // Error response already sent within handle_client_connection
                 let _ = socket.disconnect();
             }
-        });
+        },
+    );
 }

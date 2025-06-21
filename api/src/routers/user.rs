@@ -1,21 +1,20 @@
 use anyhow::anyhow;
 use axum::{
     Extension, Router,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post},
 };
 use sea_orm::TryIntoModel;
 
-use app::persistence::users::{create_user, get_user, search_users};
+use app::persistence::users::{create_user, get_user};
 use app::state::AppState;
 use app::{error::UserError, persistence::users::update_user};
-use models::queries::user::UserQuery;
-use models::schemas::user::{UserListSchema, UserSchema};
+use models::schemas::user::UserSchema;
 use models::{
     params::user::{CreateUserParams, UpdateUserParams},
-    schemas::user::ClientSchema,
+    schemas::user::AuthSchema,
 };
 
 use crate::error::ApiError;
@@ -35,19 +34,6 @@ async fn users_post(
     Ok((StatusCode::CREATED, Json(UserSchema::from(user))))
 }
 
-#[axum::debug_handler]
-async fn users_get(
-    State(state): State<AppState>,
-    Query(query): Query<Option<UserQuery>>,
-) -> Result<impl IntoResponse, ApiError> {
-    let query = query.unwrap_or_default();
-
-    let users = search_users(&state.conn, query)
-        .await
-        .map_err(ApiError::from)?;
-    Ok(Json(UserListSchema::from(users)))
-}
-
 async fn users_id_get(
     state: State<AppState>,
     Path(id): Path<String>,
@@ -61,10 +47,10 @@ async fn users_id_get(
 #[axum::debug_handler]
 async fn current_user_update(
     state: State<AppState>,
-    Extension(client): Extension<ClientSchema>,
+    Extension(auth_state): Extension<AuthSchema>,
     Valid(Json(params)): Valid<Json<UpdateUserParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user_id = &client
+    let user_id = &auth_state
         .user
         .as_ref()
         .ok_or_else(|| anyhow!("User not logged in"))?
@@ -81,7 +67,7 @@ async fn current_user_update(
 
 pub fn create_user_router() -> Router<AppState> {
     Router::new()
-        .route("/", post(users_post).get(users_get))
+        .route("/", post(users_post))
         .route("/{id}", get(users_id_get))
         .route("/me", get(me_get))
         .route("/me", patch(current_user_update))
