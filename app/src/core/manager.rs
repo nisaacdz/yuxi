@@ -11,13 +11,16 @@ use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
-use tokio::sync::{Mutex, Notify};
-use tokio::time::sleep;
+use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::{
     cache::{Cache, TournamentRegistry},
-    core::{moderation::FrequencyMonitor, timeout::TimeoutMonitor},
+    core::{
+        debouncer::{Debouncer, DebouncerConfig},
+        moderation::FrequencyMonitor,
+        timeout::TimeoutMonitor,
+    },
     persistence::text,
     state::AppState,
 };
@@ -29,6 +32,8 @@ const MAX_PROCESS_WAIT: Duration = Duration::from_secs(2);
 const MAX_PROCESS_STACK_SIZE: usize = 5;
 
 const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+const UPDATE_ALL_MAX_STACK_SIZE: usize = 20;
+const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Serialize, Debug, Clone)]
 struct WsFailurePayload {
@@ -176,13 +181,12 @@ struct TournamentManagerInner {
     participants: Cache<TypingSessionSchema>,
     app_state: AppState,
     typing_text: RwLock<Arc<String>>,
-    update_all_notifier: Arc<Notify>,
+    update_all_broadcaster: Debouncer,
 }
 
 #[derive(Clone)]
 pub struct TournamentManager {
     inner: Arc<TournamentManagerInner>,
-    update_all_notifier_clone: Arc<Notify>,
 }
 
 impl TournamentManager {
@@ -198,31 +202,30 @@ impl TournamentManager {
             None,
         ));
 
+        let participants = Cache::new();
+
         let tournament_id_arc = Arc::new(tournament_schema.id.to_string());
-        let typing_text_arc = Arc::new("".to_string()); // Default empty text
-        let update_all_notifier = Arc::new(Notify::new());
+        let typing_text_arc = Arc::new("".to_string());
+
+        let update_all_broadcaster = Self::create_update_all_broadcaster(
+            tournament_id_arc.clone(),
+            app_state.clone(),
+            participants.clone(),
+        );
 
         let inner_manager_state = TournamentManagerInner {
             tournament_id: tournament_id_arc.clone(),
             tournament_meta: Arc::new(tournament_schema.clone()),
             tournament_session_state: initial_session_state,
-            participants: Cache::new(),
+            participants,
             app_state: app_state.clone(),
             typing_text: RwLock::new(typing_text_arc),
-            update_all_notifier: update_all_notifier.clone(),
+            update_all_broadcaster,
         };
 
         let manager = Self {
             inner: Arc::new(inner_manager_state),
-            update_all_notifier_clone: update_all_notifier,
         };
-
-        let debouncer_manager_clone = manager.clone();
-        tokio::spawn(async move {
-            debouncer_manager_clone
-                .run_update_all_debouncer_task()
-                .await;
-        });
 
         let start_task_manager_clone = manager.clone();
         let task_tournament_id_for_scheduler = tournament_schema.id.clone();
@@ -258,69 +261,70 @@ impl TournamentManager {
         manager
     }
 
-    // Task for debouncing "update:all" events
-    async fn run_update_all_debouncer_task(self: Self) {
-        loop {
-            // Wait for a notification OR a timeout.
-            tokio::select! {
-                _ = self.update_all_notifier_clone.notified() => {
-                    // Notification received, debounce a bit.
-                    sleep(UPDATE_ALL_DEBOUNCE_DURATION).await;
+    fn create_update_all_broadcaster(
+        tournament_id: Arc<String>,
+        app_state: AppState,
+        participants: Cache<TypingSessionSchema>,
+    ) -> Debouncer {
+        Debouncer::new(move || {
+                // Broadcast the update to all participants
+                print!("Broadcasting update:all for tournament {}", tournament_id);
+                let all_participants = participants.values();
+
+                if all_participants.is_empty() {
+                    return;
                 }
-                // Fallback periodic update, e.g., every 5x debounce duration
-                _ = sleep(UPDATE_ALL_DEBOUNCE_DURATION * 5) => {
-                    // info!("Debouncer periodic check for tournament {}", self.inner.tournament_id);
+
+                let updates_for_all = all_participants
+                    .iter()
+                    .map(|session_data| {
+                        let partial_data = PartialParticipantData {
+                            current_position: Some(session_data.current_position),
+                            correct_position: Some(session_data.correct_position),
+                            total_keystrokes: Some(session_data.total_keystrokes),
+                            current_speed: Some(session_data.current_speed),
+                            current_accuracy: Some(session_data.current_accuracy),
+                            started_at: session_data.started_at,
+                            ended_at: session_data.ended_at,
+                        };
+                        PartialParticipantDataForUpdate {
+                            member_id: session_data.member.id.clone(),
+                            updates: partial_data,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if updates_for_all.is_empty() {
+                    return;
                 }
-            }
 
-            let inner_snapshot = self.inner.clone();
+                let update_all_payload = UpdateAllPayload {
+                    updates: updates_for_all,
+                };
 
-            let all_sessions: Vec<TypingSessionSchema> = inner_snapshot.participants.values();
+                let tournament_room_id = tournament_id.to_string();
+                let io_clone = app_state.socket_io.clone();
 
-            if all_sessions.is_empty() {
-                continue;
-            }
-
-            let updates_for_all: Vec<PartialParticipantDataForUpdate> = all_sessions
-                .iter()
-                .map(|session_data| {
-                    let partial_data = PartialParticipantData {
-                        current_position: Some(session_data.current_position),
-                        correct_position: Some(session_data.correct_position),
-                        total_keystrokes: Some(session_data.total_keystrokes),
-                        current_speed: Some(session_data.current_speed),
-                        current_accuracy: Some(session_data.current_accuracy),
-                        started_at: session_data.started_at,
-                        ended_at: session_data.ended_at,
-                    };
-                    PartialParticipantDataForUpdate {
-                        member_id: session_data.member.id.clone(),
-                        updates: partial_data,
+                tokio::task::spawn(async move {
+                    info!("Emitting update:all for tournament {}", tournament_room_id);
+                    if let Err(e) = io_clone
+                        .to(tournament_room_id.clone())
+                        .emit("update:all", &update_all_payload)
+                        .await
+                    {
+                        error!(
+                            "Failed to emit update:all for tournament {}: {}",
+                            tournament_room_id, e
+                        );
                     }
-                })
-                .collect();
-
-            if updates_for_all.is_empty() {
-                continue;
-            }
-
-            let update_all_payload = UpdateAllPayload {
-                updates: updates_for_all,
-            };
-            let tournament_room_id = inner_snapshot.tournament_id.to_string();
-            let io_clone = inner_snapshot.app_state.socket_io.clone();
-
-            if let Err(e) = io_clone
-                .to(tournament_room_id.clone())
-                .emit("update:all", &update_all_payload)
-                .await
-            {
-                error!(
-                    "Failed to emit update:all for tournament {}: {}",
-                    tournament_room_id, e
-                );
-            }
-        }
+                });
+            },
+            DebouncerConfig {
+                debounce_duration: UPDATE_ALL_DEBOUNCE_DURATION,
+                max_stack_size: UPDATE_ALL_MAX_STACK_SIZE,
+                max_debounce_period: UPDATE_ALL_MAX_WAIT,
+            },
+        )
     }
 
     async fn execute_tournament_start_logic(self: Self) {
@@ -599,7 +603,7 @@ impl TournamentManager {
             warn!("Failed to send update:me to {}: {}", member.id, e);
         }
 
-        self.inner.update_all_notifier.notify_one();
+        self.inner.update_all_broadcaster.trigger();
     }
 
     fn register_socket_listeners(self: Self, socket: SocketRef, spectator: bool) {
