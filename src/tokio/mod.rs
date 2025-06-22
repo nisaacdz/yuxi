@@ -1,12 +1,12 @@
-use api::{setup_config, setup_db, setup_router};
+use api::{setup_config, setup_router};
 use app::config::Config;
 
 async fn worker(config: Config, listener: std::net::TcpListener) {
     tracing::info!("Worker started");
 
-    let conn = setup_db(&config.db_url).await;
+    // let conn = setup_db(&config.db_url).await;
 
-    let router = setup_router(config, conn);
+    let router = setup_router(config);
     let listener = tokio::net::TcpListener::from_std(listener).expect("bind to port");
     axum::serve(listener, router).await.expect("start server");
 }

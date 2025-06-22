@@ -23,10 +23,12 @@ pub async fn parse_tournament(
     user_id: Option<&str>,
     member_id: Option<&str>,
 ) -> Result<Tournament, DbErr> {
-    let created_by = users::Entity::find_by_id(tournament.created_by)
-        .one(&app_state.conn)
-        .await?
-        .ok_or_else(|| DbErr::Custom("Tournament creator not found".into()))?;
+    let creator = app_state
+        .tables
+        .users
+        .get_data(&tournament.created_by)
+        .map(|u| u.username)
+        .unwrap_or("Anonymous".into());
     let manager = app_state.tournament_registry.get(&tournament.id);
 
     let live_data = match (manager, user_id, member_id) {
@@ -54,7 +56,7 @@ pub async fn parse_tournament(
     Ok(Tournament {
         id: tournament.id,
         title: tournament.title,
-        creator: created_by.username,
+        creator,
         description: tournament.description,
         started_at,
         ended_at,
@@ -67,24 +69,32 @@ pub async fn parse_tournament(
 }
 
 pub async fn create_tournament(
-    db: &DbConn,
+    state: &AppState,
     params: CreateTournamentParams,
     user: &UserSchema,
 ) -> Result<tournaments::Model, DbErr> {
     let id = nanoid::nanoid!(TOURNAMENT_ID_LENGTH, &super::ID_ALPHABET);
 
-    tournaments::ActiveModel {
-        id: Set(id),
-        title: Set(params.title),
-        description: Set(params.description),
-        scheduled_for: Set(params.scheduled_for),
-        created_by: Set(user.id.clone()),
-        privacy: Set(TournamentPrivacy::Open),
-        text_options: Set(params.text_options.map(TextOptions::to_value)),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
+    let new_tournament = tournaments::Model {
+        id: id.clone(),
+        title: params.title,
+        description: params.description,
+        scheduled_for: params.scheduled_for,
+        created_by: user.id.clone(),
+        privacy: TournamentPrivacy::Open,
+        text_options: params.text_options.map(TextOptions::to_value),
+        created_at: Utc::now().fixed_offset(),
+        updated_at: Utc::now().fixed_offset(),
+        started_at: None,
+        ended_at: None,
+    };
+
+    state
+        .tables
+        .tournaments
+        .set_data(&id, new_tournament.clone());
+
+    Ok(new_tournament)
 }
 
 pub async fn search_tournaments(
@@ -97,7 +107,7 @@ pub async fn search_tournaments(
     let page = query.page.unwrap_or(1);
     let offset = (page - 1) * limit;
 
-    let total = tournaments::Entity::find().count(&app_state.conn).await?;
+    let total = app_state.tables.tournaments.count() as u64;
     let data = {
         let mut res = Vec::new();
 
@@ -141,7 +151,13 @@ pub async fn search_tournaments(
             .offset(offset)
             .limit(limit);
 
-        for m in sql_query.all(&app_state.conn).await?.into_iter() {
+        for m in app_state
+            .tables
+            .tournaments
+            .values()
+            .into_iter()
+            .take(limit as usize)
+        {
             res.push(parse_tournament(m, app_state, user_id, member_id).await?)
         }
         res
@@ -150,9 +166,9 @@ pub async fn search_tournaments(
     return Ok(PaginatedData::new(data, page, limit, total));
 }
 
-pub async fn get_tournament(db: &DbConn, id: String) -> Result<Option<TournamentSchema>, DbErr> {
-    tournaments::Entity::find_by_id(id)
-        .one(db)
-        .await
-        .map(|v| v.map(|v| v.into()))
+pub async fn get_tournament(
+    state: &AppState,
+    id: String,
+) -> Result<Option<TournamentSchema>, DbErr> {
+    Ok(state.tables.tournaments.get_data(&id).map(From::from))
 }

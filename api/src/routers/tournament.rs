@@ -30,7 +30,7 @@ async fn tournaments_post(
 
     tracing::debug!("Creating tournament with params: {:?}", params);
 
-    let tournament = create_tournament(&state.conn, params, &user)
+    let tournament = create_tournament(&state, params, &user)
         .await
         .map_err(ApiError::from)?;
 
@@ -72,7 +72,7 @@ async fn tournaments_id_get(
     state: State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = get_tournament(&state.conn, id)
+    let result = get_tournament(&state, id)
         .await
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::from(anyhow!("Tournament not found")))?;

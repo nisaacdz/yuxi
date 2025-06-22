@@ -6,16 +6,7 @@ use app::state::AppState;
 use crate::error::ApiError;
 
 async fn root_get(state: State<AppState>) -> Result<String, ApiError> {
-    let result = state
-        .conn
-        .query_one(Statement::from_string(
-            state.conn.get_database_backend(),
-            "SELECT 'Hello, World from DB!'",
-        ))
-        .await
-        .map_err(ApiError::from)?;
-
-    result.unwrap().try_get_by(0).map_err(|e| e.into())
+    Ok("Hello, World from DB!".into())
 }
 
 pub fn create_root_router() -> Router<AppState> {

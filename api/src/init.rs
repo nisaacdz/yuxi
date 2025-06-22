@@ -7,11 +7,11 @@ use crate::middleware::extension::extension;
 use crate::routers::create_router;
 use app::cache::{TournamentRegistry, TypingSessionRegistry};
 use app::config::Config;
-use app::state::AppState;
+use app::state::{AppState, Tables};
 use socketioxide::SocketIo;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
+pub fn setup_router(config: Config) -> Router {
     let cors = CorsLayer::new()
         .allow_methods([
             Method::OPTIONS,
@@ -36,14 +36,15 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 
     let tournament_registry = TournamentRegistry::new();
     let typing_session_registry = TypingSessionRegistry::new();
+    let tables = Tables::new();
     let (socket_layer, socket_io) = SocketIo::new_layer();
 
     let app_state = AppState {
-        conn,
         config,
         tournament_registry,
         typing_session_registry,
         socket_io,
+        tables,
     };
 
     {
@@ -64,13 +65,13 @@ pub fn setup_config() -> Config {
     Config::from_env()
 }
 
-pub async fn setup_db(db_url: &str) -> DatabaseConnection {
-    let mut opt = ConnectOptions::new(db_url);
-    opt.max_lifetime(std::time::Duration::from_secs(60));
+// pub async fn setup_db(db_url: &str) -> DatabaseConnection {
+//     let mut opt = ConnectOptions::new(db_url);
+//     opt.max_lifetime(std::time::Duration::from_secs(60));
 
-    opt.min_connections(10).max_connections(100);
+//     opt.min_connections(10).max_connections(100);
 
-    Database::connect(opt)
-        .await
-        .expect("Database connection failed")
-}
+//     Database::connect(opt)
+//         .await
+//         .expect("Database connection failed")
+// }

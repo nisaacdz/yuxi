@@ -1,3 +1,4 @@
+use fake::{Fake, faker};
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
@@ -20,13 +21,18 @@ const USER_ID_LENGTH: usize = 12;
 
 const USERNAME_SUFFIX_LENGTH: usize = 6;
 
-pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users::Model, DbErr> {
+pub async fn create_user(
+    state: &AppState,
+    params: CreateUserParams,
+) -> Result<users::Model, DbErr> {
     let pass_hash = bcrypt::hash(params.password, 4).unwrap();
 
-    let existing_user = users::Entity::find()
-        .filter(users::Column::Email.eq(&params.email))
-        .one(db)
-        .await?;
+    let existing_user = state
+        .tables
+        .users
+        .values()
+        .into_iter()
+        .find(|u| &u.email == &params.email);
 
     if existing_user.is_some() {
         return Err(DbErr::Custom("User already exists".to_string()));
@@ -35,43 +41,41 @@ pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users:
     let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
 
     let username = format!(
-        "@User{}",
+        "{}{}",
+        faker::internet::en::Username().fake::<String>(),
         nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET)
     );
 
-    users::ActiveModel {
-        id: Set(id),
-        email: Set(params.email),
-        passhash: Set(pass_hash),
-        username: Set(username),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
+    let new_user = users::Model {
+        id: id.clone(),
+        email: params.email,
+        passhash: pass_hash,
+        username: username,
+        created_at: Utc::now().fixed_offset(),
+        updated_at: Utc::now().fixed_offset(),
+    };
+
+    state.tables.users.set_data(&id, new_user.clone());
+
+    Ok(new_user)
 }
 
 pub async fn update_user(
-    db: &DbConn,
+    state: &AppState,
     id: &str,
     params: UpdateUserParams,
 ) -> Result<users::Model, DbErr> {
-    let mut update_query = users::Entity::update_many().filter(users::Column::Id.eq(id));
+    state.tables.users.update_data(id, |u| {
+        if let Some(username) = params.username {
+            u.username = username;
+        }
+    });
 
-    if let Some(username) = params.username {
-        update_query = update_query.col_expr(
-            users::Column::Username,
-            sea_orm::sea_query::Expr::value(username),
-        );
-    }
-
-    update_query.exec(db).await?;
-
-    users::Entity::find_by_id(id)
-        .one(db)
-        .await?
-        .ok_or(DbErr::RecordNotFound(
-            "User not found after update".to_string(),
-        ))
+    state
+        .tables
+        .users
+        .get_data(id)
+        .ok_or_else(|| DbErr::RecordNotFound("user not found".into()))
 }
 
 pub async fn search_users(db: &DbConn, query: UserQuery) -> Result<Vec<users::Model>, DbErr> {
@@ -81,18 +85,20 @@ pub async fn search_users(db: &DbConn, query: UserQuery) -> Result<Vec<users::Mo
         .await
 }
 
-pub async fn get_user(db: &DbConn, id: &str) -> Result<Option<users::Model>, DbErr> {
-    users::Entity::find_by_id(id).one(db).await
+pub async fn get_user(state: &AppState, id: &str) -> Result<Option<users::Model>, DbErr> {
+    Ok(state.tables.users.get_data(id))
 }
 
 pub async fn login_user(
-    db: &DbConn,
+    state: &AppState,
     LoginUserParams { email, password }: LoginUserParams,
 ) -> Result<users::Model, DbErr> {
-    let user = match users::Entity::find()
-        .filter(users::Column::Email.eq(&email))
-        .one(db)
-        .await?
+    let user = match state
+        .tables
+        .users
+        .values()
+        .into_iter()
+        .find(|u| &u.email == &email)
     {
         None => return Err(DbErr::RecordNotFound("User not found".to_string())),
         Some(user) => user,
@@ -108,19 +114,20 @@ pub async fn forgot_password(
     body: ForgotPasswordBody,
 ) -> Result<models::domains::otp::Model, anyhow::Error> {
     let now = Utc::now();
-    let db = &state.conn;
     let email = body.email.trim().to_lowercase();
 
-    let user = users::Entity::find()
-        .filter(users::Column::Email.eq(email.clone()))
-        .one(db)
-        .await?;
+    let user = state
+        .tables
+        .users
+        .values()
+        .into_iter()
+        .find(|u| email == u.email);
 
     if user.is_none() {
         return Err(anyhow::anyhow!("User not found"));
     }
 
-    match otp::Entity::find_by_id(email.clone()).one(db).await? {
+    match state.tables.otps.get_data(&email) {
         Some(existing_otp)
             if now.signed_duration_since(existing_otp.created_at) <= OTP_DURATION =>
         {
@@ -128,7 +135,7 @@ pub async fn forgot_password(
         }
         Some(_) => {
             // If OTP exists but is expired, delete it
-            otp::Entity::delete_by_id(email.clone()).exec(db).await?;
+            state.tables.otps.delete_data(&email);
         }
         _ => {}
     }
@@ -143,32 +150,25 @@ pub async fn forgot_password(
         created_at: Utc::now().fixed_offset(),
     };
 
-    let otp_model = otp::ActiveModel {
-        email: Set(email.clone()),
-        otp: Set(otp_value),
-        created_at: Set(otp.created_at),
+    let otp_model = otp::Model {
+        email: email.clone(),
+        otp: otp_value,
+        created_at: otp.created_at,
     };
 
-    otp_model.insert(db).await?;
+    state.tables.otps.set_data(&email, otp_model);
 
     Ok(otp)
 }
 
-pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<String, DbErr> {
+pub async fn reset_password(state: &AppState, params: ResetPasswordBody) -> Result<String, DbErr> {
     use chrono::Utc;
     use models::domains::otp;
-    use sea_orm::TransactionTrait;
-
-    let txn = db.begin().await?;
-
     // 1. Find OTP record for the email
-    let otp_record = otp::Entity::find_by_id(params.email.clone())
-        .one(&txn)
-        .await?;
+    let otp_record = state.tables.otps.get_data(&params.email);
     let otp_record = match otp_record {
         Some(r) => r,
         None => {
-            txn.rollback().await?;
             return Err(DbErr::Custom("OTP not found".to_string()));
         }
     };
@@ -176,11 +176,10 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
     // 2. Check OTP matches and is not expired (10 min window)
     let now = Utc::now();
     if otp_record.otp.to_string() != params.otp {
-        txn.rollback().await?;
         return Err(DbErr::Custom("OTP incorrect".to_string()));
     }
+
     if now.signed_duration_since(otp_record.created_at) > OTP_DURATION {
-        txn.rollback().await?;
         return Err(DbErr::Custom("OTP expired".to_string()));
     }
 
@@ -188,26 +187,20 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
     let pass_hash = bcrypt::hash(params.password, 4).map_err(|e| DbErr::Custom(e.to_string()))?;
 
     // 4. Update user's password
-    let user = users::Entity::find()
-        .filter(users::Column::Email.eq(params.email.clone()))
-        .one(&txn)
-        .await?;
-    let mut user = match user {
-        Some(u) => u.into_active_model(),
-        None => {
-            txn.rollback().await?;
-            return Err(DbErr::Custom("User not found".to_string()));
-        }
-    };
-    user.passhash = Set(pass_hash);
-    user.update(&txn).await?;
+    let user = state
+        .tables
+        .users
+        .values()
+        .into_iter()
+        .find(|u| u.email == params.email)
+        .expect("User is missing");
+    let user = state
+        .tables
+        .users
+        .update_data(&user.id, |u| u.passhash == pass_hash);
 
     // 5. Delete OTP
-    otp::Entity::delete_by_id(params.email.clone())
-        .exec(&txn)
-        .await?;
-
+    state.tables.otps.delete_data(&params.email);
     // 6. Commit transaction
-    txn.commit().await?;
     Ok("Password reset successful".into())
 }

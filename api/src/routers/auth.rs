@@ -23,9 +23,7 @@ pub async fn login_post(
     State(state): State<AppState>,
     Json(params): Json<LoginUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = login_user(&state.conn, params)
-        .await
-        .map_err(ApiError::from)?;
+    let user = login_user(&state, params).await.map_err(ApiError::from)?;
 
     let access = encode_data(&state.config, &UserSchema::from(user.clone()))?;
 
@@ -46,7 +44,7 @@ pub async fn register_post(
     State(state): State<AppState>,
     Json(params): Json<CreateUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = create_user(&state.conn, params)
+    let user = create_user(&state, params)
         .await
         .map(UserSchema::from)
         .map_err(ApiError::from)?;
@@ -89,7 +87,7 @@ pub async fn reset_password_post(
     State(state): State<AppState>,
     Json(body): Json<ResetPasswordBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = app::persistence::users::reset_password(&state.conn, body)
+    let result = app::persistence::users::reset_password(&state, body)
         .await
         .map_err(ApiError::from)?;
 

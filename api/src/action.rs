@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use app::{core::TournamentManager, state::AppState};
-use models::schemas::user::{AuthSchema, TournamentRoomMember};
+use models::schemas::{
+    tournament::TournamentSchema,
+    user::{AuthSchema, TournamentRoomMember},
+};
 use socketioxide::extract::{HttpExtension, SocketRef};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -64,37 +67,20 @@ pub fn register_tournament_namespace(app_state: AppState) {
             let app_state = app_state.clone();
             let socket = socket.clone();
 
-            let member = match socket.extensions.get::<TournamentRoomMember>() {
-                Some(member) => member.clone(),
-                None => {
-                    error!(
-                        "TournamentRoomMember not found in socket extensions for ID: {}",
-                        socket.id
-                    );
-                    let _ = socket.disconnect();
-                    return;
-                }
-            };
+            let member = socket
+                .extensions
+                .get::<TournamentRoomMember>()
+                .expect("Member should be set in extensions");
 
             info!(
                 "Socket.IO connected for tournament '{}': Member: {:?}",
                 tournament_id, member.id
             );
 
-            let tournament = match app::persistence::tournaments::get_tournament(
-                &app_state.conn,
-                tournament_id.to_string(),
-            )
-            .await
-            {
-                Ok(Some(tournament)) => tournament,
-                Ok(None) => {
+            let tournament = match app_state.tables.tournaments.get_data(&tournament_id) {
+                Some(tournament) => TournamentSchema::from(tournament),
+                None => {
                     error!("Tournament with ID '{}' not found", tournament_id);
-                    let _ = socket.disconnect();
-                    return;
-                }
-                Err(e) => {
-                    error!("Error fetching tournament '{}': {}", tournament_id, e);
                     let _ = socket.disconnect();
                     return;
                 }

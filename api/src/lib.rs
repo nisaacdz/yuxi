@@ -8,7 +8,7 @@ mod validation;
 pub mod models;
 pub mod routers;
 
-pub use init::{setup_config, setup_db, setup_router};
+pub use init::{setup_config, setup_router};
 use serde::Serialize;
 use uuid::Uuid;
 
