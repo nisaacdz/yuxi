@@ -1,3 +1,4 @@
+use fake::{faker, Fake};
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
@@ -35,7 +36,8 @@ pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users:
     let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
 
     let username = format!(
-        "@User{}",
+        "{}{}",
+        faker::internet::en::Username().fake::<String>(),
         nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET)
     );
 

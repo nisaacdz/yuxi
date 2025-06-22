@@ -463,25 +463,6 @@ impl TournamentManager {
             };
         }
 
-        let all_participants_api_data: Vec<ParticipantData> = self
-            .inner
-            .participants
-            .values()
-            .iter()
-            .map(|s| Self::map_session_to_api_participant_data(s))
-            .collect();
-
-        let join_success_payload = JoinSuccessPayload {
-            data: current_tournament_data,
-            member: member_schema.clone(),
-            participants: all_participants_api_data,
-            noauth,
-        };
-        // Emit join:success to the current socket
-        if socket.emit("join:success", &join_success_payload).is_err() {
-            warn!("Failed to send join:success to member {}", member_schema.id);
-        }
-
         if !spectator {
             // Add or get participant session
             let participant_session =
@@ -518,6 +499,26 @@ impl TournamentManager {
             {
                 warn!("Failed to broadcast typist:joined: {}", e);
             }
+        }
+
+        let all_participants_api_data = self
+            .inner
+            .participants
+            .values()
+            .iter()
+            .map(|s| Self::map_session_to_api_participant_data(s))
+            .collect::<Vec<_>>();
+
+        let join_success_payload = JoinSuccessPayload {
+            data: current_tournament_data,
+            member: member_schema.clone(),
+            participants: all_participants_api_data,
+            noauth,
+        };
+
+        // Emit join:success to the current socket
+        if socket.emit("join:success", &join_success_payload).is_err() {
+            warn!("Failed to send join:success to member {}", member_schema.id);
         }
 
         // Register other event listeners for this socket
