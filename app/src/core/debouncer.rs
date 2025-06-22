@@ -115,23 +115,24 @@ async fn worker_loop<F>(
     let mut debounce_deadline: Option<Instant> = None;
 
     // The fix is here: we add `receiver` to the argument list to avoid capturing `rx`.
-    let execute_and_reset = |current_stack: &mut usize,
-                                 last_exec_time: &mut Instant,
-                                 deadline_opt: &mut Option<Instant>,
-                                 receiver: &mut mpsc::UnboundedReceiver<()>| {
-        // Only execute if there was a pending trigger.
-        if *current_stack > 0 {
-            (action)();
-        }
+    let execute_and_reset =
+        |current_stack: &mut usize,
+         last_exec_time: &mut Instant,
+         deadline_opt: &mut Option<Instant>,
+         receiver: &mut mpsc::UnboundedReceiver<()>| {
+            // Only execute if there was a pending trigger.
+            if *current_stack > 0 {
+                (action)();
+            }
 
-        // Use the passed-in `receiver` argument.
-        while receiver.try_recv().is_ok() {}
+            // Use the passed-in `receiver` argument.
+            while receiver.try_recv().is_ok() {}
 
-        // Reset all state for the next cycle.
-        *current_stack = 0;
-        *last_exec_time = Instant::now();
-        *deadline_opt = None;
-    };
+            // Reset all state for the next cycle.
+            *current_stack = 0;
+            *last_exec_time = Instant::now();
+            *deadline_opt = None;
+        };
 
     loop {
         let sleep_duration = match debounce_deadline {
@@ -225,7 +226,6 @@ async fn test_debouncer() {
     // Execution will have happened on the 5th trigger. After another 2s, the 6th trigger will fire.
     println!("Waiting for final trigger's debounce to fire...");
     tokio::time::sleep(Duration::from_secs(3)).await;
-
 
     // --- Scenario 3: Max Debounce Period ---
     println!("\n[Scenario 3] Continuous triggers keeping it debounced, until max period (4s).");

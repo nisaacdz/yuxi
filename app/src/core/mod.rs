@@ -1,6 +1,6 @@
+mod debouncer;
 mod moderation;
 mod timeout;
-mod debouncer;
 
 mod manager;
 
