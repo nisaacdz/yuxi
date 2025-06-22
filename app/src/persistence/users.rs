@@ -1,4 +1,4 @@
-use fake::{faker, Fake};
+use fake::{Fake, faker};
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
