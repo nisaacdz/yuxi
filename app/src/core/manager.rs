@@ -114,6 +114,25 @@ struct TournamentData {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+struct PartialTournamentData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scheduled_for: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    started_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ended_at: Option<DateTime<Utc>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 struct JoinSuccessPayload {
     data: TournamentData,
     member: TournamentRoomMember,
@@ -142,20 +161,7 @@ struct LeaveSuccessPayload {
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 struct UpdateDataPayload {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scheduled_for: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    started_at: Option<DateTime<Utc>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ended_at: Option<DateTime<Utc>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
+    updates: PartialTournamentData,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -340,12 +346,14 @@ impl TournamentManager {
                 }
 
                 update_data_payload = UpdateDataPayload {
-                    title: None,
-                    scheduled_for: None,
-                    description: None,
-                    started_at: session_state_guard.started_at,
-                    ended_at: session_state_guard.ended_at,
-                    text: Some(self.inner.typing_text.read().unwrap().to_string()),
+                    updates: PartialTournamentData {
+                        title: None,
+                        scheduled_for: None,
+                        description: None,
+                        started_at: session_state_guard.started_at,
+                        ended_at: session_state_guard.ended_at,
+                        text: Some(self.inner.typing_text.read().unwrap().to_string()),
+                    },
                 };
             }
 
@@ -709,6 +717,12 @@ impl TournamentManager {
                             })
                             .ok();
                     }
+                    let leave_success_payload = LeaveSuccessPayload {
+                        message: "Left tournament successfully".to_string(),
+                    };
+                    if s.emit("leave:success", &leave_success_payload).is_err() {
+                        warn!("Failed to send leave:success to {}: {}", cid_leave, s.id);
+                    }
                 }
             }
         });
@@ -853,19 +867,6 @@ impl TournamentManager {
                 );
             }
 
-            let leave_success_payload = LeaveSuccessPayload {
-                message: "Left tournament successfully".to_string(),
-            };
-            if socket
-                .emit("leave:success", &leave_success_payload)
-                .is_err()
-            {
-                warn!(
-                    "Failed to send leave:success to {}: {}",
-                    member_id_str, socket.id
-                );
-            }
-
             if self.inner.participants.count() == 0 {
                 let session_ended;
                 {
@@ -889,14 +890,7 @@ impl TournamentManager {
                 "Leave/disconnect for member {} but no session found in tournament {}.",
                 member_id_str, self.inner.tournament_id
             );
-            let failure_payload =
-                WsFailurePayload::new(2210, "You are not currently in this tournament session.");
-            if socket.emit("leave:failure", &failure_payload).is_err() {
-                warn!(
-                    "Failed to send leave:failure to {}: {}",
-                    member_id_str, socket.id
-                );
-            }
+
             Err(anyhow::anyhow!("Member session not found for leave"))
         }
     }
