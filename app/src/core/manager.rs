@@ -123,13 +123,13 @@ struct JoinSuccessPayload {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct MemberJoinedPayload {
+struct ParticipantJoinedPayload {
     participant: ParticipantData,
 }
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct MemberLeftPayload {
+struct ParticipantLeftPayload {
     member_id: String,
 }
 
@@ -480,10 +480,10 @@ impl TournamentManager {
                 .typing_session_registry
                 .set_session(&member_schema.id, participant_session.clone());
 
-            // Broadcast "typist:joined" to other members in the room
+            // Broadcast "participant:joined" to other members in the room
             let new_participant_api_data =
                 Self::map_session_to_api_participant_data(&participant_session);
-            let member_joined_payload = MemberJoinedPayload {
+            let participant_joined_payload = ParticipantJoinedPayload {
                 participant: new_participant_api_data,
             };
 
@@ -494,10 +494,10 @@ impl TournamentManager {
             if let Err(e) = io_clone
                 .to(tournament_id_str)
                 .except(socket.id)
-                .emit("typist:joined", &member_joined_payload)
+                .emit("participant:joined", &participant_joined_payload)
                 .await
             {
-                warn!("Failed to broadcast typist:joined: {}", e);
+                warn!("Failed to broadcast participant:joined: {}", e);
             }
         }
 
@@ -834,7 +834,7 @@ impl TournamentManager {
 
             socket.leave(self.inner.tournament_id.to_string());
 
-            let member_left_payload = MemberLeftPayload {
+            let participant_left_payload = ParticipantLeftPayload {
                 member_id: member_id_str.to_string(),
             };
 
@@ -844,11 +844,11 @@ impl TournamentManager {
             if let Err(e) = io_clone
                 .to(tournament_id_str.clone())
                 .except(socket.id)
-                .emit("typist:left", &member_left_payload)
+                .emit("participant:left", &participant_left_payload)
                 .await
             {
                 warn!(
-                    "Failed to broadcast typist:left for {}: {}",
+                    "Failed to broadcast participant:left for {}: {}",
                     member_id_str, e
                 );
             }
@@ -902,7 +902,7 @@ impl TournamentManager {
     }
 
     // broadcast_tournament_update is removed as updates are now granular:
-    // join:success, typist:joined, typist:left, update:me, update:all, update:data
+    // join:success, participant:joined, participant:left, update:me, update:all, update:data
 
     pub fn cleanup(tournament_registry: TournamentRegistry, tournament_id: &Arc<String>) {
         // Takes Arc<String>
