@@ -90,8 +90,10 @@ impl Debouncer {
     ///
     /// This method ensures that if there is a pending action to be executed, it will run
     /// before the debouncer fully terminates. It consumes the Debouncer handle.
-    pub async fn shutdown(self) {
-        if let Some(handle) = self.inner.shutdown_handle.lock().unwrap().take() {
+    pub async fn shutdown(&self) {
+        let handle = self.inner.shutdown_handle.lock().unwrap().take();
+
+        if let Some(handle) = handle {
             // Drop our sender instance by closing the channel.
             self.inner.tx.clone().closed().await;
 
@@ -180,10 +182,7 @@ async fn worker_loop<F>(
     );
 }
 
-// --- Example Usage ---
-// To run this example, create a new binary project with `cargo new --bin my_debouncer_test`
-// ensure you have tokio in your Cargo.toml: `cargo add tokio --features full`
-// then paste all the code above this line into src/main.rs and run with `cargo run`.
+
 #[tokio::test]
 async fn test_debouncer() {
     use std::time::SystemTime;

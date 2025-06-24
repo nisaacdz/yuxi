@@ -5,13 +5,14 @@ use models::schemas::pagination::PaginatedData;
 use models::schemas::tournament::{Tournament, TournamentSchema};
 use models::schemas::typing::TextOptions;
 use models::schemas::user::{TournamentRoomMember, UserSchema};
+use sea_orm::ActiveValue::Unchanged;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set,
 };
 
 use models::domains::*;
-use models::params::tournament::CreateTournamentParams;
+use models::params::tournament::{CreateTournamentParams, UpdateTournamentParams};
 
 use crate::state::AppState;
 
@@ -85,6 +86,43 @@ pub async fn create_tournament(
     }
     .insert(db)
     .await
+}
+
+pub async fn update_tournament(
+    state: &AppState,
+    params: UpdateTournamentParams,
+) -> Result<tournaments::Model, DbErr> {
+    let id = if let Some(id) = params.id {
+        id
+    } else {
+        return Err(DbErr::AttrNotSet("id".into()));
+    };
+    let mut tournament: tournaments::ActiveModel = tournaments::ActiveModel {
+        id: Unchanged(id),
+        ..Default::default()
+    };
+
+    if let Some(title) = params.title {
+        tournament.title = Set(title);
+    }
+
+    if let Some(description) = params.description {
+        tournament.description = Set(description);
+    }
+
+    if let Some(scheduled_for) = params.scheduled_for {
+        tournament.scheduled_for = Set(scheduled_for);
+    }
+
+    if let Some(ended_at) = params.ended_at {
+        tournament.ended_at = Set(ended_at);
+    }
+
+    if let Some(text_options) = params.text_options {
+        tournament.text_options = Set(text_options.map(TextOptions::to_value));
+    }
+
+    tournament.update(&state.conn).await
 }
 
 pub async fn search_tournaments(

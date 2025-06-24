@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use app::{core::TournamentManager, state::AppState};
+use app::{
+    core::{TournamentManager, WsFailurePayload},
+    state::AppState,
+};
 use models::schemas::user::{AuthSchema, TournamentRoomMember};
 use socketioxide::extract::{HttpExtension, SocketRef};
 use tracing::{error, info, warn};
@@ -81,30 +84,51 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 tournament_id, member.id
             );
 
-            let tournament = match app::persistence::tournaments::get_tournament(
-                &app_state.conn,
-                tournament_id.to_string(),
-            )
-            .await
-            {
-                Ok(Some(tournament)) => tournament,
-                Ok(None) => {
-                    error!("Tournament with ID '{}' not found", tournament_id);
-                    let _ = socket.disconnect();
-                    return;
-                }
-                Err(e) => {
-                    error!("Error fetching tournament '{}': {}", tournament_id, e);
-                    let _ = socket.disconnect();
-                    return;
-                }
-            };
-
             let tournament_registry = app_state.tournament_registry.clone();
 
-            let manager = tournament_registry.get_or_init(tournament_id.to_string(), move || {
-                TournamentManager::new(tournament, app_state)
-            });
+            let manager = match tournament_registry.get(&tournament_id) {
+                Some(manager) => manager,
+                None => {
+                    let tournament = match app::persistence::tournaments::get_tournament(
+                        &app_state.conn,
+                        tournament_id.to_string(),
+                    )
+                    .await
+                    {
+                        Ok(Some(tournament)) if tournament.ended_at.is_some() => {
+                            error!("Tournament with ID '{}' has already ended", tournament_id);
+                            socket
+                                .emit(
+                                    "join:failure",
+                                    &WsFailurePayload::new(1005, "Tournament has already ended"),
+                                )
+                                .unwrap();
+                            let _ = socket.disconnect();
+                            return;
+                        }
+                        Ok(Some(tournament)) => tournament,
+                        Ok(None) => {
+                            error!("Tournament with ID '{}' not found", tournament_id);
+                            let _ = socket.disconnect();
+                            return;
+                        }
+                        Err(e) => {
+                            error!("Error fetching tournament '{}': {}", tournament_id, e);
+                            let _ = socket.disconnect();
+                            return;
+                        }
+                    };
+
+                    info!(
+                        "Creating new TournamentManager for tournament '{}'",
+                        tournament_id
+                    );
+
+                    tournament_registry.get_or_init(tournament_id.to_string(), || {
+                        TournamentManager::new(tournament, app_state.clone())
+                    })
+                }
+            };
 
             if let Err(e) = manager.connect(socket.clone(), spectator, noauth).await {
                 warn!("Error handling member connection for {}: {}", member.id, e);

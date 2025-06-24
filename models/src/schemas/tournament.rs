@@ -14,6 +14,8 @@ pub struct TournamentSchema {
     pub created_at: DateTimeUtc,
     pub created_by: String,
     pub scheduled_for: DateTimeUtc,
+    pub started_at: Option<DateTimeUtc>,
+    pub ended_at: Option<DateTimeUtc>,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
 }
@@ -27,6 +29,8 @@ impl From<tournaments::Model> for TournamentSchema {
             created_at: tournament.created_at.to_utc(),
             created_by: tournament.created_by,
             scheduled_for: tournament.scheduled_for.to_utc(),
+            started_at: tournament.started_at.map(|v| v.to_utc()),
+            ended_at: tournament.ended_at.map(|v| v.to_utc()),
             privacy: tournament.privacy,
             text_options: tournament.text_options.map(TextOptions::from_value),
         }
@@ -56,7 +60,7 @@ pub struct TournamentSession {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub text: Option<String>,
-    pub current: i32,
+    pub scheduled_end: Option<DateTime<Utc>>,
 }
 
 impl TournamentSession {
@@ -67,7 +71,7 @@ impl TournamentSession {
             started_at: None,
             ended_at: None,
             text,
-            current: 0,
+            scheduled_end: None,
         }
     }
 }

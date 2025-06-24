@@ -49,7 +49,6 @@ impl TypingSessionSchema {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
-#[serde(untagged)]
 pub enum TournamentStatus {
     Upcoming,
     Started,

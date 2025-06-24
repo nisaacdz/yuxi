@@ -1,9 +1,12 @@
 use anyhow::Result;
 use chrono::{DateTime, TimeDelta, Utc};
-use models::schemas::{
-    tournament::{TournamentLiveData, TournamentSchema, TournamentSession},
-    typing::{TournamentStatus, TypingSessionSchema},
-    user::TournamentRoomMember,
+use models::{
+    params::tournament::UpdateTournamentParams,
+    schemas::{
+        tournament::{TournamentLiveData, TournamentSchema, TournamentSession},
+        typing::{TournamentStatus, TypingSessionSchema},
+        user::TournamentRoomMember,
+    },
 };
 use serde::Serialize;
 use socketioxide::extract::{Data, SocketRef};
@@ -15,13 +18,13 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use crate::{
-    cache::{Cache, TournamentRegistry},
+    cache::Cache,
     core::{
         debouncer::{Debouncer, DebouncerConfig},
         moderation::FrequencyMonitor,
         timeout::TimeoutMonitor,
     },
-    persistence::text,
+    persistence::{text, tournaments::update_tournament},
     state::AppState,
 };
 
@@ -37,13 +40,13 @@ const UPDATE_ALL_MAX_STACK_SIZE: usize = 15;
 const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Serialize, Debug, Clone)]
-struct WsFailurePayload {
+pub struct WsFailurePayload {
     code: i32,
     message: String,
 }
 
 impl WsFailurePayload {
-    fn new(code: i32, message: &str) -> Self {
+    pub fn new(code: i32, message: &str) -> Self {
         Self {
             code: code,
             message: message.to_string(),
@@ -110,11 +113,9 @@ struct TournamentData {
     created_by: String,
     scheduled_for: DateTime<Utc>,
     description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     started_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     ended_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    scheduled_end: Option<DateTime<Utc>>,
     text: Option<String>,
 }
 
@@ -182,12 +183,12 @@ struct TournamentManagerInner {
     participants: Cache<TypingSessionSchema>,
     app_state: AppState,
     typing_text: RwLock<Arc<String>>,
-    update_all_broadcaster: Debouncer,
 }
 
 #[derive(Clone)]
 pub struct TournamentManager {
     inner: Arc<TournamentManagerInner>,
+    update_all_broadcaster: Debouncer,
 }
 
 impl TournamentManager {
@@ -221,11 +222,11 @@ impl TournamentManager {
             participants,
             app_state: app_state.clone(),
             typing_text: RwLock::new(typing_text_arc),
-            update_all_broadcaster,
         };
 
         let manager = Self {
             inner: Arc::new(inner_manager_state),
+            update_all_broadcaster,
         };
 
         let start_task_manager_clone = manager.clone();
@@ -233,12 +234,26 @@ impl TournamentManager {
         let task_scheduled_for_time = tournament_schema.scheduled_for;
 
         tokio::task::spawn(async move {
+            let tournament_id = tournament_id_arc.clone();
             match crate::scheduler::schedule_new_task(
                 task_tournament_id_for_scheduler.clone(),
                 async move {
+                    let stm = start_task_manager_clone.clone();
+                    let current_time = Utc::now();
                     start_task_manager_clone
                         .execute_tournament_start_logic()
                         .await;
+                    let scheduled_end = current_time + TimeDelta::minutes(10);
+                    let end_task = async move {
+                        stm.end_tournament().await;
+                    };
+                    crate::scheduler::schedule_new_task(
+                        format!("{}:end", tournament_id.to_string()),
+                        end_task,
+                        scheduled_end,
+                    )
+                    .await
+                    .ok();
                 },
                 task_scheduled_for_time,
             )
@@ -378,19 +393,64 @@ impl TournamentManager {
                 error!("Failed to emit update:data for tournament start: {}", e);
             }
         } else {
-            // No participants, cleanup the manager
-            // No need to lock session_state if we are just cleaning up due to no participants
             info!(
                 "No participants in tournament {}. Cleaning up.",
                 &*self.inner.tournament_id
             );
-            let registry = self.inner.app_state.tournament_registry.clone();
-            let id_to_clean = self.inner.tournament_id.clone();
-            Self::cleanup(registry, &id_to_clean);
+            self.end_tournament().await;
         }
     }
 
-    // Helper to map TypingSessionSchema to the API's ParticipantData
+    async fn end_tournament(self: Self) {
+        let now = Utc::now();
+        let mut session_data = self.inner.tournament_session_state.lock().await;
+        session_data.ended_at = Some(now);
+        std::mem::drop(session_data);
+
+        self.update_all_broadcaster.trigger();
+
+        info!(
+            "Cleaning up manager for tournament {}",
+            &*self.inner.tournament_id
+        );
+        self.update_all_broadcaster.shutdown().await;
+        match update_tournament(
+            &self.inner.app_state,
+            UpdateTournamentParams {
+                id: Some(self.inner.tournament_id.to_string()),
+                ended_at: Some(Some(now.fixed_offset())),
+                ..Default::default()
+            },
+        )
+        .await
+        {
+            Ok(t) => {
+                info!("successfully ended tournament: {}", t.id)
+            }
+            Err(err) => {
+                error!("Failed to end tournament: {}", err)
+            }
+        }
+
+        let manager = self.clone();
+        let evict_task = async move {
+            manager
+                .inner
+                .app_state
+                .tournament_registry
+                .evict(manager.inner.tournament_id.as_str());
+        };
+
+        let evict_on = Utc::now() + TimeDelta::minutes(15);
+        crate::scheduler::schedule_new_task(
+            format!("{}:evict", self.inner.tournament_id),
+            evict_task,
+            evict_on,
+        )
+        .await
+        .ok();
+    }
+
     fn map_session_to_api_participant_data(session: &TypingSessionSchema) -> ParticipantData {
         ParticipantData {
             member: session.member.clone(),
@@ -414,38 +474,28 @@ impl TournamentManager {
 
         let now = Utc::now();
 
-        // Check join conditions only if the user is not already a participant
-        if !self.inner.participants.contains_key(&member_schema.id) {
-            let started_at = {
-                // Scope for the lock guard
+        if !spectator && !self.inner.participants.contains_key(&member_schema.id) {
+            let (started_at, ended_at) = {
                 let session_state_guard = self.inner.tournament_session_state.lock().await;
-                session_state_guard.started_at
-                // Guard dropped here
+                (session_state_guard.started_at, session_state_guard.ended_at)
             };
 
             let scheduled_for = self.inner.tournament_meta.scheduled_for;
 
-            let mut can_join = true;
-            let mut reason = "Uknown reason";
-            if spectator {
-                // Spectators can join at any time
-                can_join = true;
-            } else if started_at.is_some()
+            if ended_at.is_some()
+                || started_at.is_some()
                 || (scheduled_for - now < TimeDelta::from_std(JOIN_DEADLINE).unwrap())
             {
-                // If the tournament has already started
-                can_join = false;
-                reason = "Tournament no longer accepting participants.";
-            }
+                error!(member_id = %member_schema.id, "Tournament no longer accepting participants.");
+                let failure_payload =
+                    WsFailurePayload::new(1004, "Tournament no longer accepting participants.");
 
-            if !can_join {
-                error!(member_id = %member_schema.id, "Cannot join tournament {}: {}", self.inner.tournament_id, reason);
-                let failure_payload = WsFailurePayload::new(1004, reason);
-                // Emit failure and return early
                 if socket.emit("join:failure", &failure_payload).is_err() {
                     warn!("Failed to send join:failure to member {}", member_schema.id);
                 }
-                return Err(anyhow::anyhow!(reason));
+                return Err(anyhow::anyhow!(
+                    "Tournament no longer accepting participants."
+                ));
             }
         }
 
@@ -474,6 +524,7 @@ impl TournamentManager {
                 } else {
                     None
                 },
+                scheduled_end: t_session_state_guard.scheduled_end,
             };
         }
 
@@ -605,7 +656,7 @@ impl TournamentManager {
             warn!("Failed to send update:me to {}: {}", member.id, e);
         }
 
-        self.inner.update_all_broadcaster.trigger();
+        self.update_all_broadcaster.trigger();
     }
 
     fn register_socket_listeners(self: Self, socket: SocketRef, spectator: bool) {
@@ -621,15 +672,16 @@ impl TournamentManager {
             // but will likely be instantaneous under normal circumstances
             let max_process_stack_size = MAX_PROCESS_STACK_SIZE;
             let cleanup_wait_duration = INACTIVITY_TIMEOUT_DURATION;
-            let member = member.clone();
+            let manager_clone = self.clone();
             let timeout_monitor = {
                 let socket = socket.clone();
+                let manager_clone = manager_clone.clone();
 
                 let after_timeout_fn = { async move || info!("Timedout user now typing") };
 
                 Arc::new(TimeoutMonitor::new(
                     async move || {
-                        handle_timeout(&member, socket).await;
+                        manager_clone.handle_timeout(socket).await;
                     },
                     after_timeout_fn,
                     cleanup_wait_duration,
@@ -822,6 +874,7 @@ impl TournamentManager {
                             } else {
                                 None
                             },
+                            scheduled_end: t_session_state_guard.scheduled_end,
                         };
                     }
                     if socket_data
@@ -884,10 +937,7 @@ impl TournamentManager {
                         "Last participant left tournament {}. Cleaning up.",
                         self.inner.tournament_id
                     );
-                    // Self::cleanup(self.inner.app_state.tournament_registry.clone(), &self.inner.tournament_id);
-                    // Note: Automatic cleanup on last leave might be aggressive.
-                    // Consider if an empty tournament should persist until its scheduled end or manual cleanup.
-                    // For now, commenting out aggressive cleanup.
+                    // End the tournament if it has started
                 }
             }
             Ok(())
@@ -901,13 +951,12 @@ impl TournamentManager {
         }
     }
 
-    // broadcast_tournament_update is removed as updates are now granular:
-    // join:success, participant:joined, participant:left, update:me, update:all, update:data
-
-    pub fn cleanup(tournament_registry: TournamentRegistry, tournament_id: &Arc<String>) {
-        // Takes Arc<String>
-        info!("Cleaning up manager for tournament {}", tournament_id);
-        tournament_registry.evict(tournament_id.as_str()); // Evict takes &str
+    pub async fn handle_timeout(self: Self, socket: SocketRef) {
+        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
+        self.inner.participants.update_data(&member.id, |m| {
+            m.ended_at = Some(Utc::now());
+        });
+        self.update_all_broadcaster.trigger();
     }
 
     pub async fn live_data(&self, member_id: &str) -> TournamentLiveData {
@@ -926,18 +975,6 @@ impl TournamentManager {
             ended_at,
         }
     }
-}
-
-/// Handles the automatic leaving of a user due to inactivity timeout.
-///
-/// Retrieves the user's current tournament (if any) and calls `handle_leave`.
-///
-/// # Arguments
-///
-/// * `member` - The member information of the user who timed out.
-/// * `socket` - The user's socket connection reference.
-pub async fn handle_timeout(member: &TournamentRoomMember, _socket: SocketRef) {
-    info!(member_id = %member.id, "Handling inactivity timeout");
 }
 
 fn process_typing_input(
