@@ -22,7 +22,6 @@ pub struct UpdateTournamentParams {
     pub scheduled_for: Option<DateTime<FixedOffset>>,
     pub text_options: Option<Option<TextOptions>>,
     pub ended_at: Option<Option<DateTime<FixedOffset>>>,
-    pub started_at: Option<Option<DateTime<FixedOffset>>>,
 }
 
 impl Default for UpdateTournamentParams {
@@ -33,8 +32,7 @@ impl Default for UpdateTournamentParams {
             description: None,
             text_options: None,
             scheduled_for: None,
-            ended_at: None,
-            started_at: None,
+            ended_at: None,  
         }
     }
 }

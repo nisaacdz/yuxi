@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use app::{core::TournamentManager, state::AppState};
+use app::{
+    core::{TournamentManager, WsFailurePayload},
+    state::AppState,
+};
 use models::schemas::{
     tournament::TournamentSchema,
     user::{AuthSchema, TournamentRoomMember},
@@ -77,20 +80,36 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 tournament_id, member.id
             );
 
-            let tournament = match app_state.tables.tournaments.get_data(&tournament_id) {
-                Some(tournament) => TournamentSchema::from(tournament),
-                None => {
-                    error!("Tournament with ID '{}' not found", tournament_id);
-                    let _ = socket.disconnect();
-                    return;
-                }
-            };
-
             let tournament_registry = app_state.tournament_registry.clone();
 
-            let manager = tournament_registry.get_or_init(tournament_id.to_string(), move || {
-                TournamentManager::new(tournament, app_state)
-            });
+            let manager = match tournament_registry.get(&tournament_id) {
+                Some(v) => v,
+                None => match app_state.tables.tournaments.get_data(&tournament_id) {
+                    Some(tournament) if tournament.ended_at.is_some() => {
+                        error!("Tournament with ID '{}' no longer available", tournament_id);
+                        socket
+                            .emit(
+                                "join:failure",
+                                &WsFailurePayload::new(1006, "Tournament ended".into()),
+                            )
+                            .ok();
+                        let _ = socket.disconnect();
+                        return;
+                    }
+                    Some(tournament) => {
+                        let t_schema = TournamentSchema::from(tournament);
+
+                        tournament_registry.get_or_init(tournament_id.to_string(), || {
+                            TournamentManager::new(t_schema, app_state)
+                        })
+                    }
+                    None => {
+                        error!("Tournament with ID '{}' not found", tournament_id);
+                        let _ = socket.disconnect();
+                        return;
+                    }
+                },
+            };
 
             if let Err(e) = manager.connect(socket.clone(), spectator, noauth).await {
                 warn!("Error handling member connection for {}: {}", member.id, e);

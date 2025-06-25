@@ -5,13 +5,10 @@ use models::schemas::pagination::PaginatedData;
 use models::schemas::tournament::{Tournament, TournamentSchema};
 use models::schemas::typing::TextOptions;
 use models::schemas::user::{TournamentRoomMember, UserSchema};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set,
-};
+use sea_orm::DbErr;
 
 use models::domains::*;
-use models::params::tournament::CreateTournamentParams;
+use models::params::tournament::{CreateTournamentParams, UpdateTournamentParams};
 
 use crate::state::AppState;
 
@@ -107,55 +104,60 @@ pub async fn search_tournaments(
     let page = query.page.unwrap_or(1);
     let offset = (page - 1) * limit;
 
-    let total = app_state.tables.tournaments.count() as u64;
+    let total = app_state
+        .tables
+        .tournaments
+        .values()
+        .into_iter()
+        .filter(|t| {
+            (if let Some(status) = query.status {
+                match status {
+                    models::schemas::typing::TournamentStatus::Upcoming => {
+                        t.started_at.is_none() && t.ended_at.is_none()
+                    }
+                    models::schemas::typing::TournamentStatus::Started => {
+                        t.started_at.is_some() && t.ended_at.is_none()
+                    }
+                    models::schemas::typing::TournamentStatus::Ended => t.ended_at.is_some(),
+                }
+            } else {
+                true
+            }) && (if let Some(privacy) = query.privacy {
+                t.privacy == privacy
+            } else {
+                true
+            })
+        })
+        .count() as u64;
+
     let data = {
         let mut res = Vec::new();
-
-        let mut sql_query = tournaments::Entity::find();
-
-        if let Some(privacy) = query.privacy {
-            sql_query = sql_query.filter(tournaments::Column::Privacy.eq(privacy))
-        }
-
-        if let Some(status) = query.status {
-            match status {
-                models::schemas::typing::TournamentStatus::Upcoming => {
-                    sql_query = sql_query.filter(tournaments::Column::ScheduledFor.gt(Utc::now()))
-                }
-                models::schemas::typing::TournamentStatus::Started => {
-                    sql_query = sql_query.filter(
-                        tournaments::Column::StartedAt
-                            .is_not_null()
-                            .and(tournaments::Column::EndedAt.is_null()),
-                    )
-                }
-                models::schemas::typing::TournamentStatus::Ended => {
-                    sql_query = sql_query.filter(tournaments::Column::EndedAt.is_not_null())
-                }
-            }
-        }
-
-        if let Some(search) = query.search {
-            if !search.is_empty() {
-                sql_query = sql_query.filter(
-                    tournaments::Column::Title
-                        .like(&search)
-                        .or(tournaments::Column::Description.like(&search))
-                        .or(users::Column::Username.like(&search)),
-                );
-            }
-        }
-
-        let sql_query = sql_query
-            .order_by_asc(tournaments::Column::ScheduledFor)
-            .offset(offset)
-            .limit(limit);
 
         for m in app_state
             .tables
             .tournaments
             .values()
             .into_iter()
+            .filter(|t| {
+                (if let Some(status) = query.status {
+                    match status {
+                        models::schemas::typing::TournamentStatus::Upcoming => {
+                            t.started_at.is_none() && t.ended_at.is_none()
+                        }
+                        models::schemas::typing::TournamentStatus::Started => {
+                            t.started_at.is_some() && t.ended_at.is_none()
+                        }
+                        models::schemas::typing::TournamentStatus::Ended => t.ended_at.is_some(),
+                    }
+                } else {
+                    true
+                }) && (if let Some(privacy) = query.privacy {
+                    t.privacy == privacy
+                } else {
+                    true
+                })
+            })
+            .skip(offset as usize)
             .take(limit as usize)
         {
             res.push(parse_tournament(m, app_state, user_id, member_id).await?)
@@ -171,4 +173,39 @@ pub async fn get_tournament(
     id: String,
 ) -> Result<Option<TournamentSchema>, DbErr> {
     Ok(state.tables.tournaments.get_data(&id).map(From::from))
+}
+
+pub async fn update_tournament(
+    state: &AppState,
+    params: UpdateTournamentParams,
+) -> Result<tournaments::Model, DbErr> {
+    let id = if let Some(id) = params.id {
+        id
+    } else {
+        return Err(DbErr::AttrNotSet("tournament id".into()));
+    };
+    let v = state.tables.tournaments.update_data(&id, move |t| {
+        if let Some(title) = params.title {
+            t.title = title;
+        }
+        if let Some(description) = params.description {
+            t.description = description;
+        }
+        if let Some(scheduled_for) = params.scheduled_for {
+            t.scheduled_for = scheduled_for;
+        }
+        if let Some(text_options) = params.text_options {
+            t.text_options = text_options.map(TextOptions::to_value);
+        }
+        if let Some(ended_at) = params.ended_at {
+            t.ended_at = ended_at;
+        }
+        if let Some(started_at) = params.started_at {
+            t.started_at = started_at;
+        }
+
+        t.clone()
+    });
+
+    v.ok_or(DbErr::RecordNotFound("Tournament not found".into()))
 }
