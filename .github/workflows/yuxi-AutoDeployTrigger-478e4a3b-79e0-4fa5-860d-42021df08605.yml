@@ -1,0 +1,48 @@
+name: Trigger auto deployment for yuxi
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ feat/offline ]
+    paths:
+    - '**'
+    - '.github/workflows/yuxi-AutoDeployTrigger-478e4a3b-79e0-4fa5-860d-42021df08605.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:      
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions: 
+      id-token: write #This is required for requesting the OIDC JWT Token
+      contents: read #Required when GH token is used to authenticate with private repo
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.YUXI_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.YUXI_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.YUXI_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          _dockerfilePathKey_: _dockerfilePath_
+          registryUrl: 
+          registryUsername: ${{ secrets.YUXI_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.YUXI_REGISTRY_PASSWORD }}
+          containerAppName: yuxi
+          resourceGroup: experimental
+          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
+          _buildArgumentsKey_: |
+            _buildArgumentsValues_
+
+
