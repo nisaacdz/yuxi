@@ -21,8 +21,6 @@ pub struct DebouncerConfig {
 /// When the last clone of a Debouncer is dropped, its background task will
 /// automatically shut down.
 pub struct Debouncer {
-    // We wrap the fields that cannot be simply cloned into an Arc, allowing the main
-    // struct `Debouncer` to derive `Clone` easily.
     inner: Arc<DebouncerInner>,
 }
 

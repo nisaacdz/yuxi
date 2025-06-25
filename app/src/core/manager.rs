@@ -24,7 +24,7 @@ use crate::{
         moderation::FrequencyMonitor,
         timeout::TimeoutMonitor,
     },
-    persistence::{text, tournaments::update_tournament},
+    persistence::{text::generate_text, tournaments::update_tournament},
     state::AppState,
 };
 
@@ -32,8 +32,8 @@ const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
 const DEBOUNCE_DURATION: Duration = Duration::from_millis(200);
-const MAX_PROCESS_WAIT: Duration = Duration::from_millis(1500);
-const MAX_PROCESS_STACK_SIZE: usize = 5;
+const MAX_PROCESS_WAIT: Duration = Duration::from_millis(1000);
+const MAX_PROCESS_STACK_SIZE: usize = 3;
 
 const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(400);
 const UPDATE_ALL_MAX_STACK_SIZE: usize = 15;
@@ -67,7 +67,7 @@ struct ParticipantData {
     ended_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 struct PartialParticipantData {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,8 +89,8 @@ struct PartialParticipantData {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct PartialParticipantDataForUpdate {
-    member_id: String,
+struct PartialParticipantDataForUpdate<'a> {
+    member_id: &'a str,
     updates: PartialParticipantData,
 }
 
@@ -100,8 +100,8 @@ struct UpdateMePayload {
 }
 
 #[derive(Serialize, Debug, Clone)]
-struct UpdateAllPayload {
-    updates: Vec<PartialParticipantDataForUpdate>,
+struct UpdateAllPayload<'a> {
+    updates: Vec<PartialParticipantDataForUpdate<'a>>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -185,6 +185,83 @@ struct TournamentManagerInner {
     typing_text: RwLock<Arc<String>>,
 }
 
+impl TournamentManagerInner {
+    async fn end_tournament(self: &Arc<Self>) {
+        let now = Utc::now();
+        let mut session_data = self.tournament_session_state.lock().await;
+        session_data.ended_at = Some(now);
+        std::mem::drop(session_data);
+
+        info!(
+            "Cleaning up manager for tournament {}",
+            &*self.tournament_id
+        );
+        match update_tournament(
+            &self.app_state,
+            UpdateTournamentParams {
+                id: Some(self.tournament_id.to_string()),
+                ended_at: Some(Some(now.fixed_offset())),
+                ..Default::default()
+            },
+        )
+        .await
+        {
+            Ok(t) => {
+                info!("successfully ended tournament: {}", t.id)
+            }
+            Err(err) => {
+                error!("Failed to end tournament: {}", err)
+            }
+        }
+
+        self.broadcast_update_data(false).await;
+
+        let manager = self.clone();
+        let evict_task = async move {
+            manager
+                .app_state
+                .tournament_registry
+                .evict(manager.tournament_id.as_str());
+        };
+
+        let evict_on = Utc::now() + TimeDelta::minutes(10);
+        crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
+    }
+
+    async fn broadcast_update_data(self: &Arc<Self>, start: bool) {
+        let update_data_payload = {
+            let (started_at, ended_at) = {
+                let lock = self.tournament_session_state.lock().await;
+                (lock.started_at, lock.ended_at)
+            };
+
+            UpdateDataPayload {
+                updates: PartialTournamentData {
+                    title: None,
+                    scheduled_for: None,
+                    description: None,
+                    started_at: if start { started_at } else { None },
+                    ended_at: ended_at,
+                    text: if start {
+                        Some(self.typing_text.read().unwrap().to_string())
+                    } else {
+                        None
+                    },
+                },
+            }
+        };
+        let tournament_id = self.tournament_id.clone();
+        let io_clone = self.app_state.socket_io.clone();
+
+        io_clone
+            .to(tournament_id.to_string())
+            .emit("update:data", &update_data_payload)
+            .await
+            .inspect_err(|e| error!("Failed to emit update:data for tournament start: {}", e))
+            .ok();
+    }
+}
+
 #[derive(Clone)]
 pub struct TournamentManager {
     inner: Arc<TournamentManagerInner>,
@@ -209,120 +286,89 @@ impl TournamentManager {
         let tournament_id_arc = Arc::new(tournament_schema.id.to_string());
         let typing_text_arc = Arc::new("".to_string());
 
-        let update_all_broadcaster = Self::create_update_all_broadcaster(
-            tournament_id_arc.clone(),
-            app_state.clone(),
-            participants.clone(),
-        );
-
-        let inner_manager_state = TournamentManagerInner {
+        let inner_manager_state = Arc::new(TournamentManagerInner {
             tournament_id: tournament_id_arc.clone(),
             tournament_meta: Arc::new(tournament_schema.clone()),
             tournament_session_state: initial_session_state,
             participants,
             app_state: app_state.clone(),
             typing_text: RwLock::new(typing_text_arc),
-        };
+        });
+
+        let update_all_broadcaster =
+            Self::create_update_all_broadcaster(inner_manager_state.clone());
 
         let manager = Self {
-            inner: Arc::new(inner_manager_state),
-            update_all_broadcaster,
+            inner: inner_manager_state,
+            update_all_broadcaster: update_all_broadcaster.clone(),
         };
 
-        let start_task_manager_clone = manager.clone();
-        let task_tournament_id_for_scheduler = tournament_schema.id.clone();
-        let task_scheduled_for_time = tournament_schema.scheduled_for;
+        {
+            let manager = manager.clone();
+            let tournament_id = tournament_schema.id.clone();
+            let scheduled_for = tournament_schema.scheduled_for;
 
-        tokio::task::spawn(async move {
-            let tournament_id = tournament_id_arc.clone();
-            match crate::scheduler::schedule_new_task(
-                task_tournament_id_for_scheduler.clone(),
+            crate::scheduler::schedule_new_task(
                 async move {
-                    let stm = start_task_manager_clone.clone();
-                    let current_time = Utc::now();
-                    start_task_manager_clone
-                        .execute_tournament_start_logic()
-                        .await;
-                    let scheduled_end = current_time + TimeDelta::minutes(10);
-                    let end_task = async move {
-                        stm.end_tournament().await;
-                    };
-                    crate::scheduler::schedule_new_task(
-                        format!("{}:end", tournament_id.to_string()),
-                        end_task,
-                        scheduled_end,
-                    )
-                    .await
-                    .ok();
+                    manager.execute_tournament_start_logic().await;
                 },
-                task_scheduled_for_time,
+                scheduled_for,
             )
-            .await
-            {
-                Ok(_handle) => {
-                    info!(
-                        "Successfully scheduled start task for tournament {} at {}",
-                        task_tournament_id_for_scheduler, task_scheduled_for_time
-                    );
-                }
-                Err(schedule_err) => {
-                    error!(
-                        "Failed to schedule start task for tournament {}: {}",
-                        task_tournament_id_for_scheduler, schedule_err
-                    );
-                }
-            }
-        });
+            .inspect_err(|e| {
+                error!(
+                    "Failed to schedule start task for tournament {}: {}",
+                    tournament_id, e
+                );
+            })
+            .ok();
+        }
 
         manager
     }
 
-    fn create_update_all_broadcaster(
-        tournament_id: Arc<String>,
-        app_state: AppState,
-        participants: Cache<TypingSessionSchema>,
-    ) -> Debouncer {
+    fn create_update_all_broadcaster(inner: Arc<TournamentManagerInner>) -> Debouncer {
         Debouncer::new(
             move || {
-                // Broadcast the update to all participants
-                print!("Broadcasting update:all for tournament {}", tournament_id);
-                let all_participants = participants.values();
-
-                if all_participants.is_empty() {
-                    return;
-                }
-
-                let updates_for_all = all_participants
-                    .iter()
-                    .map(|session_data| {
-                        let partial_data = PartialParticipantData {
-                            current_position: Some(session_data.current_position),
-                            correct_position: Some(session_data.correct_position),
-                            total_keystrokes: Some(session_data.total_keystrokes),
-                            current_speed: Some(session_data.current_speed),
-                            current_accuracy: Some(session_data.current_accuracy),
-                            started_at: session_data.started_at,
-                            ended_at: session_data.ended_at,
-                        };
-                        PartialParticipantDataForUpdate {
-                            member_id: session_data.member.id.clone(),
-                            updates: partial_data,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                if updates_for_all.is_empty() {
-                    return;
-                }
-
-                let update_all_payload = UpdateAllPayload {
-                    updates: updates_for_all,
-                };
-
-                let tournament_room_id = tournament_id.to_string();
-                let io_clone = app_state.socket_io.clone();
-
+                let inner = inner.clone();
                 tokio::task::spawn(async move {
+                    let all_participants = inner.participants.values();
+
+                    if all_participants.iter().filter_map(|v| v.ended_at).count()
+                        == all_participants.len()
+                    {
+                        inner.end_tournament().await;
+                    }
+
+                    let updates_for_all = all_participants
+                        .iter()
+                        .map(|session_data| {
+                            let partial_data = PartialParticipantData {
+                                current_position: Some(session_data.current_position),
+                                correct_position: Some(session_data.correct_position),
+                                total_keystrokes: Some(session_data.total_keystrokes),
+                                current_speed: Some(session_data.current_speed),
+                                current_accuracy: Some(session_data.current_accuracy),
+                                started_at: session_data.started_at,
+                                ended_at: session_data.ended_at,
+                            };
+                            PartialParticipantDataForUpdate {
+                                member_id: &session_data.member.id,
+                                updates: partial_data,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    if updates_for_all.is_empty() {
+                        return;
+                    }
+
+                    let update_all_payload = UpdateAllPayload {
+                        updates: updates_for_all,
+                    };
+
+                    let tournament_room_id = inner.tournament_id.to_string();
+                    let io_clone = inner.app_state.socket_io.clone();
+
                     info!("Emitting update:all for tournament {}", tournament_room_id);
                     if let Err(e) = io_clone
                         .to(tournament_room_id.clone())
@@ -345,110 +391,30 @@ impl TournamentManager {
     }
 
     async fn execute_tournament_start_logic(self: Self) {
-        info!(
-            "Scheduled start task executing for tournament {}",
-            &*self.inner.tournament_id
-        );
-
         let participant_count = self.inner.participants.count();
 
         if participant_count > 0 {
-            let update_data_payload;
-            {
-                let mut session_state_guard = self.inner.tournament_session_state.lock().await;
-                session_state_guard.started_at = Some(Utc::now());
+            let text = generate_text(self.inner.tournament_meta.text_options.unwrap_or_default());
+            let mut session_state_guard = self.inner.tournament_session_state.lock().await;
+            let current_time = Utc::now();
+            let scheduled_end = current_time + TimeDelta::minutes(10);
+            session_state_guard.scheduled_end = Some(scheduled_end);
+            *self.inner.typing_text.write().unwrap() = Arc::new(text);
+            session_state_guard.started_at = Some(current_time);
+            std::mem::drop(session_state_guard);
 
-                let typing_text = text::generate_text(
-                    self.inner.tournament_meta.text_options.unwrap_or_default(),
-                );
+            self.inner.broadcast_update_data(true).await;
+            let manager = self.clone();
 
-                {
-                    *self.inner.typing_text.write().unwrap() = Arc::new(typing_text);
-                }
+            let end_task = async move {
+                manager.inner.end_tournament().await;
+                manager.update_all_broadcaster.shutdown().await;
+            };
 
-                update_data_payload = UpdateDataPayload {
-                    updates: PartialTournamentData {
-                        title: None,
-                        scheduled_for: None,
-                        description: None,
-                        started_at: session_state_guard.started_at,
-                        ended_at: session_state_guard.ended_at,
-                        text: Some(self.inner.typing_text.read().unwrap().to_string()),
-                    },
-                };
-            }
-
-            let tournament_id_str = self.inner.tournament_id.to_string();
-            let io_clone = self.inner.app_state.socket_io.clone();
-
-            info!(
-                "Starting tournament {} with {} participants. Emitting update:data.",
-                tournament_id_str, participant_count
-            );
-            if let Err(e) = io_clone
-                .to(tournament_id_str.clone())
-                .emit("update:data", &update_data_payload)
-                .await
-            {
-                error!("Failed to emit update:data for tournament start: {}", e);
-            }
+            crate::scheduler::schedule_new_task(end_task, scheduled_end).ok();
         } else {
-            info!(
-                "No participants in tournament {}. Cleaning up.",
-                &*self.inner.tournament_id
-            );
-            self.end_tournament().await;
+            self.inner.end_tournament().await;
         }
-    }
-
-    async fn end_tournament(self: Self) {
-        let now = Utc::now();
-        let mut session_data = self.inner.tournament_session_state.lock().await;
-        session_data.ended_at = Some(now);
-        std::mem::drop(session_data);
-
-        self.update_all_broadcaster.trigger();
-
-        info!(
-            "Cleaning up manager for tournament {}",
-            &*self.inner.tournament_id
-        );
-        self.update_all_broadcaster.shutdown().await;
-        match update_tournament(
-            &self.inner.app_state,
-            UpdateTournamentParams {
-                id: Some(self.inner.tournament_id.to_string()),
-                ended_at: Some(Some(now.fixed_offset())),
-                ..Default::default()
-            },
-        )
-        .await
-        {
-            Ok(t) => {
-                info!("successfully ended tournament: {}", t.id)
-            }
-            Err(err) => {
-                error!("Failed to end tournament: {}", err)
-            }
-        }
-
-        let manager = self.clone();
-        let evict_task = async move {
-            manager
-                .inner
-                .app_state
-                .tournament_registry
-                .evict(manager.inner.tournament_id.as_str());
-        };
-
-        let evict_on = Utc::now() + TimeDelta::minutes(15);
-        crate::scheduler::schedule_new_task(
-            format!("{}:evict", self.inner.tournament_id),
-            evict_task,
-            evict_on,
-        )
-        .await
-        .ok();
     }
 
     fn map_session_to_api_participant_data(session: &TypingSessionSchema) -> ParticipantData {
@@ -552,10 +518,9 @@ impl TournamentManager {
                 participant: new_participant_api_data,
             };
 
-            let io_clone = self.inner.app_state.socket_io.clone(); // Arc<Inner>, direct access
-            let tournament_id_str = self.inner.tournament_id.to_string(); // Arc<String>, direct access
+            let io_clone = self.inner.app_state.socket_io.clone();
+            let tournament_id_str = self.inner.tournament_id.to_string();
 
-            // Emit to room, excluding the current socket
             if let Err(e) = io_clone
                 .to(tournament_id_str)
                 .except(socket.id)
@@ -927,17 +892,16 @@ impl TournamentManager {
             }
 
             if self.inner.participants.count() == 0 {
-                let session_ended;
-                {
-                    let session_state = self.inner.tournament_session_state.lock().await;
-                    session_ended = session_state.ended_at.is_some();
-                }
-                if !session_ended {
-                    info!(
-                        "Last participant left tournament {}. Cleaning up.",
-                        self.inner.tournament_id
-                    );
-                    // End the tournament if it has started
+                let started = {
+                    self.inner
+                        .tournament_session_state
+                        .lock()
+                        .await
+                        .started_at
+                        .is_some()
+                };
+                if started {
+                    self.inner.end_tournament().await;
                 }
             }
             Ok(())
