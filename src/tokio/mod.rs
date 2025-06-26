@@ -6,6 +6,8 @@ async fn worker(config: Config, listener: std::net::TcpListener) {
 
     let conn = setup_db(&config.db_url).await;
 
+    utils::migrate(&conn).await.expect("Migration failed!");
+
     let router = setup_router(config, conn);
     let listener = tokio::net::TcpListener::from_std(listener).expect("bind to port");
     axum::serve(listener, router).await.expect("start server");
