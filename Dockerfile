@@ -1,5 +1,5 @@
 # --- Builder Stage ---
-    FROM rust:1.85 AS builder
+    FROM rust:1.86 AS builder
 
     # 1. Set the working directory
     WORKDIR /usr/src/yuxi

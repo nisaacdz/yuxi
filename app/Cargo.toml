@@ -15,7 +15,7 @@ chrono = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
-lettre = { workspace = true, features = ["tokio1-native-tls", "tokio1"] }
+lettre = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
 socketioxide = { workspace = true }
