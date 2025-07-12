@@ -60,7 +60,6 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
 }
 
 pub fn setup_config() -> Config {
-    dotenvy::dotenv().ok();
     Config::from_env()
 }
 

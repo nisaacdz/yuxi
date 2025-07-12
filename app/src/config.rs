@@ -18,6 +18,9 @@ pub struct Config(Arc<ConfigInner>);
 
 impl Config {
     pub fn from_env() -> Config {
+        #[cfg(debug_assertions)]
+        dotenvy::dotenv().ok();
+
         let v = ConfigInner {
             db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file"),
             host: std::env::var("HOST").expect("HOST is not set in .env file"),
