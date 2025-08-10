@@ -5362,6 +5362,7 @@ dependencies = [
  "shuttle-axum",
  "shuttle-runtime",
  "shuttle-shared-db",
+ "socketioxide",
  "tokio",
  "tower-http",
  "tracing",
