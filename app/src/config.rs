@@ -1,5 +1,36 @@
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use lettre::{AsyncSmtpTransport, Tokio1Executor, transport::smtp::authentication::Credentials};
+use openidconnect::{
+    Client, ClientId, ClientSecret, EmptyAdditionalClaims, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, IssuerUrl, RedirectUrl, StandardErrorResponse,
+    core::{
+        CoreAuthDisplay, CoreAuthPrompt, CoreClient, CoreErrorResponseType, CoreGenderClaim,
+        CoreJsonWebKey, CoreJweContentEncryptionAlgorithm, CoreProviderMetadata,
+        CoreRevocableToken, CoreRevocationErrorResponse, CoreTokenIntrospectionResponse,
+        CoreTokenResponse,
+    },
+};
+
+type GoogleAuthClient = Client<
+    EmptyAdditionalClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    CoreTokenResponse,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+
 use std::{ops::Deref, sync::Arc};
 pub struct ConfigInner {
     pub db_url: String,
@@ -11,51 +42,80 @@ pub struct ConfigInner {
     pub decoding_key: DecodingKey,
     pub emailer: String,
     pub transponder: AsyncSmtpTransport<Tokio1Executor>,
+    pub google_auth_client: GoogleAuthClient,
+    pub http_client: openidconnect::reqwest::Client,
 }
 
 #[derive(Clone)]
 pub struct Config(Arc<ConfigInner>);
 
 impl Config {
-    pub fn from_env() -> Config {
+    pub async fn from_env() -> Config {
         #[cfg(debug_assertions)]
         dotenvy::dotenv().ok();
 
+        let google_client_id =
+            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is required");
+        let google_client_secret =
+            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is required");
+        let google_redirect_url =
+            std::env::var("GOOGLE_REDIRECT_URL").expect("GOOGLE_REDIRECT_URL is required");
+
+        let http_client = openidconnect::reqwest::Client::builder()
+            .redirect(openidconnect::reqwest::redirect::Policy::none())
+            .build()
+            .expect("Failed to build HTTP client");
+
+        let provider_metadata = CoreProviderMetadata::discover_async(
+            IssuerUrl::new("https://accounts.google.com".to_string()).unwrap(),
+            &http_client,
+        )
+        .await
+        .expect("Failed to discover provider metadata");
+
+        let client = CoreClient::from_provider_metadata(
+            provider_metadata,
+            ClientId::new(google_client_id),
+            Some(ClientSecret::new(google_client_secret)),
+        )
+        .set_redirect_uri(RedirectUrl::new(google_redirect_url).expect("Invalid redirect URL"));
+
         let v = ConfigInner {
-            db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is not set in .env file"),
-            host: std::env::var("HOST").expect("HOST is not set in .env file"),
+            db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is required"),
+            host: std::env::var("HOST").expect("HOST is required"),
             port: std::env::var("PORT")
-                .expect("PORT is not set in .env file")
+                .expect("PORT is required")
                 .parse()
                 .expect("PORT is not a number"),
-            allowed_origin: std::env::var("ALLOWED_ORIGIN")
-                .expect("ALLOWED_ORIGIN is not set in .env file"),
+            allowed_origin: std::env::var("ALLOWED_ORIGIN").expect("ALLOWED_ORIGIN is required"),
             encoding_key: EncodingKey::from_secret(
                 std::env::var("JWT_SECRET")
-                    .expect("JWT_SECRET is not set in .env file")
+                    .expect("JWT_SECRET is required")
                     .as_bytes(),
             ),
             decoding_key: DecodingKey::from_secret(
                 std::env::var("JWT_SECRET")
-                    .expect("JWT_SECRET is not set in .env file")
+                    .expect("JWT_SECRET is required")
                     .as_bytes(),
             ),
-            emailer: std::env::var("EMAILER").expect("EMAILER is not set in .env file"),
+            emailer: std::env::var("EMAILER").expect("EMAILER is required"),
             transponder: AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(
-                &std::env::var("SMTP_HOST").expect("SMTP_HOST is not set in .env file"),
+                &std::env::var("SMTP_HOST").expect("SMTP_HOST is required"),
             )
             .expect("Failed to create SMTP transport")
             .port(
                 std::env::var("SMTP_PORT")
-                    .expect("SMTP_PORT is not set in .env file")
+                    .expect("SMTP_PORT is required")
                     .parse()
                     .expect("SMTP_PORT is not a number"),
             )
             .credentials(Credentials::new(
-                std::env::var("SMTP_USER").expect("SMTP_USER is not set in .env file"),
-                std::env::var("SMTP_PASS").expect("SMTP_PASS is not set in .env file"),
+                std::env::var("SMTP_USER").expect("SMTP_USER is required"),
+                std::env::var("SMTP_PASS").expect("SMTP_PASS is required"),
             ))
             .build(),
+            google_auth_client: client,
+            http_client,
         };
 
         Self(Arc::new(v))

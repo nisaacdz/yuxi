@@ -9,6 +9,17 @@ pub struct CreateUserParams {
     pub password: String,
 }
 
+#[derive(Deserialize)]
+pub struct GoogleAuthParams {
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailAuthParams {
+    pub email: String,
+}
+
 #[derive(Deserialize, Validate)]
 pub struct LoginUserParams {
     #[validate(email)]

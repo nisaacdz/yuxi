@@ -21,6 +21,7 @@ tower-http = { workspace = true, features = ["trace"] }
 tokio = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
+openidconnect = { workspace = true }
 
 # db
 sea-orm = { workspace = true }

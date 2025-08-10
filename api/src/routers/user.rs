@@ -26,9 +26,7 @@ async fn users_post(
     state: State<AppState>,
     Valid(Json(params)): Valid<Json<CreateUserParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = create_user(&state.conn, params)
-        .await
-        .map_err(ApiError::from)?;
+    let user = create_user(&state, params).await.map_err(ApiError::from)?;
 
     let user = user.try_into_model().unwrap();
     Ok((StatusCode::CREATED, Json(UserSchema::from(user))))
@@ -38,7 +36,7 @@ async fn users_id_get(
     state: State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = get_user(&state.conn, &id).await.map_err(ApiError::from)?;
+    let user = get_user(&state, &id).await.map_err(ApiError::from)?;
 
     user.map(|user| Json(UserSchema::from(user)))
         .ok_or_else(|| UserError::NotFound.into())
@@ -56,7 +54,7 @@ async fn current_user_update(
         .ok_or_else(|| anyhow!("User not logged in"))?
         .id;
 
-    let updated_user = update_user(&state.conn, user_id, params)
+    let updated_user = update_user(&state, user_id, params)
         .await
         .map_err(ApiError::from)?;
 

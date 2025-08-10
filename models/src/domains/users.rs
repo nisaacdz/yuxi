@@ -9,7 +9,7 @@ pub struct Model {
     pub username: String,
     #[sea_orm(unique)]
     pub email: String,
-    pub passhash: String,
+    pub passhash: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

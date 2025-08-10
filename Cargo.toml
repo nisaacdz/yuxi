@@ -40,6 +40,8 @@ anyhow = "1.0.86"
 lettre = { version = "0.11.17", default-features = false, features = ["tokio1-rustls", "builder", "ring", "webpki-roots", "smtp-transport"] }
 rand = "0.9.1"
 nanoid = "0.4.0"
+oauth2 = "5.0.0"
+openidconnect = { version = "4.0.1", features = ["reqwest"] }
 
 [dependencies]
 # Local dependencies

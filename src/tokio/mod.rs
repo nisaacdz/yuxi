@@ -16,7 +16,7 @@ async fn worker(config: Config, listener: std::net::TcpListener) {
 fn run_in_tokio_runtime() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async move {
-        let config = setup_config();
+        let config = setup_config().await;
         let listener = std::net::TcpListener::bind(config.get_server_url()).expect("bind to port");
         listener.set_nonblocking(true).expect("non blocking failed");
         tracing::debug!("listening on http://{}", listener.local_addr().unwrap());

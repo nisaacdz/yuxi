@@ -59,8 +59,8 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         .layer(cors)
 }
 
-pub fn setup_config() -> Config {
-    Config::from_env()
+pub async fn setup_config() -> Config {
+    Config::from_env().await
 }
 
 pub async fn setup_db(db_url: &str) -> DatabaseConnection {

@@ -2,12 +2,13 @@ use fake::{Fake, faker};
 use rand::Rng;
 use rand::{SeedableRng, rngs::StdRng};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, IntoActiveModel, QueryFilter, Set,
 };
 
 use models::domains::{otp, users};
 use models::params::user::{
-    CreateUserParams, ForgotPasswordBody, LoginUserParams, ResetPasswordBody, UpdateUserParams,
+    CreateUserParams, EmailAuthParams, ForgotPasswordBody, LoginUserParams, ResetPasswordBody,
+    UpdateUserParams,
 };
 use models::queries::user::UserQuery;
 
@@ -21,12 +22,15 @@ const USER_ID_LENGTH: usize = 12;
 
 const USERNAME_SUFFIX_LENGTH: usize = 6;
 
-pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users::Model, DbErr> {
+pub async fn create_user(
+    state: &AppState,
+    params: CreateUserParams,
+) -> Result<users::Model, DbErr> {
     let pass_hash = bcrypt::hash(params.password, 4).unwrap();
 
     let existing_user = users::Entity::find()
         .filter(users::Column::Email.eq(&params.email))
-        .one(db)
+        .one(&state.conn)
         .await?;
 
     if existing_user.is_some() {
@@ -44,16 +48,16 @@ pub async fn create_user(db: &DbConn, params: CreateUserParams) -> Result<users:
     users::ActiveModel {
         id: Set(id),
         email: Set(params.email),
-        passhash: Set(pass_hash),
+        passhash: Set(Some(pass_hash)),
         username: Set(username),
         ..Default::default()
     }
-    .insert(db)
+    .insert(&state.conn)
     .await
 }
 
 pub async fn update_user(
-    db: &DbConn,
+    state: &AppState,
     id: &str,
     params: UpdateUserParams,
 ) -> Result<users::Model, DbErr> {
@@ -66,42 +70,48 @@ pub async fn update_user(
         );
     }
 
-    update_query.exec(db).await?;
+    update_query.exec(&state.conn).await?;
 
     users::Entity::find_by_id(id)
-        .one(db)
+        .one(&state.conn)
         .await?
         .ok_or(DbErr::RecordNotFound(
             "User not found after update".to_string(),
         ))
 }
 
-pub async fn search_users(db: &DbConn, query: UserQuery) -> Result<Vec<users::Model>, DbErr> {
+pub async fn search_users(state: &AppState, query: UserQuery) -> Result<Vec<users::Model>, DbErr> {
     users::Entity::find()
         .filter(users::Column::Username.contains(query.username))
-        .all(db)
+        .all(&state.conn)
         .await
 }
 
-pub async fn get_user(db: &DbConn, id: &str) -> Result<Option<users::Model>, DbErr> {
-    users::Entity::find_by_id(id).one(db).await
+pub async fn get_user(state: &AppState, id: &str) -> Result<Option<users::Model>, DbErr> {
+    users::Entity::find_by_id(id).one(&state.conn).await
 }
 
 pub async fn login_user(
-    db: &DbConn,
+    state: &AppState,
     LoginUserParams { email, password }: LoginUserParams,
 ) -> Result<users::Model, DbErr> {
     let user = match users::Entity::find()
         .filter(users::Column::Email.eq(&email))
-        .one(db)
+        .one(&state.conn)
         .await?
     {
         None => return Err(DbErr::RecordNotFound("User not found".to_string())),
         Some(user) => user,
     };
-    if !bcrypt::verify(password, &user.passhash).unwrap() {
+
+    if let Some(passhash) = &user.passhash {
+        if !bcrypt::verify(password, &passhash).unwrap() {
+            return Err(DbErr::Custom("Password incorrect".to_string()));
+        }
+    } else {
         return Err(DbErr::Custom("Password incorrect".to_string()));
     }
+
     Ok(user)
 }
 
@@ -122,7 +132,10 @@ pub async fn forgot_password(
         return Err(anyhow::anyhow!("User not found"));
     }
 
-    match otp::Entity::find_by_id(email.clone()).one(db).await? {
+    match otp::Entity::find_by_id(email.clone())
+        .one(&state.conn)
+        .await?
+    {
         Some(existing_otp)
             if now.signed_duration_since(existing_otp.created_at) <= OTP_DURATION =>
         {
@@ -130,7 +143,9 @@ pub async fn forgot_password(
         }
         Some(_) => {
             // If OTP exists but is expired, delete it
-            otp::Entity::delete_by_id(email.clone()).exec(db).await?;
+            otp::Entity::delete_by_id(email.clone())
+                .exec(&state.conn)
+                .await?;
         }
         _ => {}
     }
@@ -151,17 +166,17 @@ pub async fn forgot_password(
         created_at: Set(otp.created_at),
     };
 
-    otp_model.insert(db).await?;
+    otp_model.insert(&state.conn).await?;
 
     Ok(otp)
 }
 
-pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<String, DbErr> {
+pub async fn reset_password(state: &AppState, params: ResetPasswordBody) -> Result<String, DbErr> {
     use chrono::Utc;
     use models::domains::otp;
     use sea_orm::TransactionTrait;
 
-    let txn = db.begin().await?;
+    let txn = state.conn.begin().await?;
 
     // 1. Find OTP record for the email
     let otp_record = otp::Entity::find_by_id(params.email.clone())
@@ -201,7 +216,7 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
             return Err(DbErr::Custom("User not found".to_string()));
         }
     };
-    user.passhash = Set(pass_hash);
+    user.passhash = Set(Some(pass_hash));
     user.update(&txn).await?;
 
     // 5. Delete OTP
@@ -212,4 +227,48 @@ pub async fn reset_password(db: &DbConn, params: ResetPasswordBody) -> Result<St
     // 6. Commit transaction
     txn.commit().await?;
     Ok("Password reset successful".into())
+}
+
+pub async fn google_auth(state: &AppState, params: EmailAuthParams) -> Result<users::Model, DbErr> {
+    use sea_orm::TransactionTrait;
+    // Start a transaction with the highest isolation level to prevent race conditions.
+    // Serializable makes the transaction behave as if it's the only one running.
+    let txn = state.conn.begin().await?;
+
+    // --- The entire operation now happens within the transaction ---
+
+    // 1. Check for the user *within* the transaction.
+    let existing_user = users::Entity::find()
+        .filter(users::Column::Email.eq(&params.email))
+        .one(&txn) // Use the transaction connection `&txn`
+        .await?;
+
+    let user_model = if let Some(user) = existing_user {
+        // --- CASE 1: USER EXISTS ---
+        // The user was found. We don't need to do anything else.
+        user
+    } else {
+        // --- CASE 2: NEW USER ---
+        // No user was found, so we create one within the same transaction.
+        let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
+        let username = format!(
+            "{}{}",
+            faker::internet::en::Username().fake::<String>(),
+            nanoid::nanoid!(USERNAME_SUFFIX_LENGTH, &super::ID_ALPHABET)
+        );
+
+        users::ActiveModel {
+            id: Set(id),
+            email: Set(params.email),
+            username: Set(username),
+            passhash: Set(None),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?
+    };
+
+    txn.commit().await?;
+
+    Ok(user_model)
 }

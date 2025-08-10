@@ -180,7 +180,6 @@ async fn worker_loop<F>(
     );
 }
 
-
 #[tokio::test]
 async fn test_debouncer() {
     use std::time::SystemTime;

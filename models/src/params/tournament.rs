@@ -32,7 +32,7 @@ impl Default for UpdateTournamentParams {
             description: None,
             text_options: None,
             scheduled_for: None,
-            ended_at: None,  
+            ended_at: None,
         }
     }
 }

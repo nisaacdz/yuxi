@@ -7,12 +7,17 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use models::params::user::{ForgotPasswordBody, ResetPasswordBody};
+use models::params::user::{
+    EmailAuthParams, ForgotPasswordBody, GoogleAuthParams, ResetPasswordBody,
+};
 use models::schemas::user::{AuthSchema, LoginSchema, TokensSchema};
 use models::{
     params::user::{CreateUserParams, LoginUserParams},
     schemas::user::UserSchema,
 };
+
+use anyhow::anyhow;
+use openidconnect::{AuthorizationCode, Nonce, TokenResponse};
 
 use crate::ApiResponse;
 use crate::error::ApiError;
@@ -23,9 +28,7 @@ pub async fn login_post(
     State(state): State<AppState>,
     Json(params): Json<LoginUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = login_user(&state.conn, params)
-        .await
-        .map_err(ApiError::from)?;
+    let user = login_user(&state, params).await.map_err(ApiError::from)?;
 
     let access = encode_data(&state.config, &UserSchema::from(user.clone()))?;
 
@@ -46,7 +49,7 @@ pub async fn register_post(
     State(state): State<AppState>,
     Json(params): Json<CreateUserParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let user = create_user(&state.conn, params)
+    let user = create_user(&state, params)
         .await
         .map(UserSchema::from)
         .map_err(ApiError::from)?;
@@ -89,7 +92,7 @@ pub async fn reset_password_post(
     State(state): State<AppState>,
     Json(body): Json<ResetPasswordBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = app::persistence::users::reset_password(&state.conn, body)
+    let result = app::persistence::users::reset_password(&state, body)
         .await
         .map_err(ApiError::from)?;
 
@@ -97,6 +100,46 @@ pub async fn reset_password_post(
         "Password reset successful",
         Some(result),
     )))
+}
+
+#[axum::debug_handler]
+pub async fn google_auth_post(
+    State(state): State<AppState>,
+    Json(params): Json<GoogleAuthParams>,
+) -> Result<impl IntoResponse, ApiError> {
+    let google_auth_client = &state.config.google_auth_client;
+    let http_client = &state.config.http_client;
+    let token_response = google_auth_client
+        .exchange_code(AuthorizationCode::new(params.code))
+        .expect("Failed to exchange code")
+        .request_async(http_client)
+        .await
+        .map_err(|_| anyhow!("En error occurred"))?;
+
+    let id_token = token_response
+        .id_token()
+        .ok_or_else(|| anyhow!("ID token not found"))?;
+
+    let claims = id_token.claims(
+        &google_auth_client.id_token_verifier(),
+        &Nonce::new_random(),
+    )?;
+
+    let user_info: EmailAuthParams = serde_json::from_str(&serde_json::to_string(&claims)?)?;
+
+    let user = app::persistence::users::google_auth(&state, user_info).await?;
+
+    let user_schema = UserSchema::from(user);
+    let access = app::utils::encode_data(&state.config, &user_schema)?;
+    let tokens = TokensSchema { access };
+    let login_response = LoginSchema {
+        user: user_schema,
+        tokens,
+    };
+
+    let response = ApiResponse::success("Login successful", Some(login_response));
+
+    Ok(Json(response))
 }
 
 pub fn create_auth_router() -> Router<AppState> {
