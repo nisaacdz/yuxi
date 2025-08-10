@@ -1,4 +1,7 @@
-use app::{persistence::users::{create_user, get_user}, state::AppState};
+use app::{
+    persistence::users::{create_user, get_user},
+    state::AppState,
+};
 use models::params::user::CreateUserParams;
 
 pub(super) async fn test_user(state: &AppState) {
@@ -7,7 +10,9 @@ pub(super) async fn test_user(state: &AppState) {
         email: "".to_string(),
     };
 
-    let user = create_user(state, params).await.expect("Create user failed!");
+    let user = create_user(state, params)
+        .await
+        .expect("Create user failed!");
     let expected = get_user(state, &user.id)
         .await
         .expect("Get user failed!")

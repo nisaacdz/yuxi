@@ -10,7 +10,7 @@ pub struct CreateUserParams {
 }
 
 #[derive(Deserialize)]
-pub struct GoogleAuthParams {
+pub struct AuthCodeParams {
     pub code: String,
 }
 

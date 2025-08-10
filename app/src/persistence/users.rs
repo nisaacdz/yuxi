@@ -229,7 +229,7 @@ pub async fn reset_password(state: &AppState, params: ResetPasswordBody) -> Resu
     Ok("Password reset successful".into())
 }
 
-pub async fn google_auth(state: &AppState, params: EmailAuthParams) -> Result<users::Model, DbErr> {
+pub async fn email_auth(state: &AppState, params: EmailAuthParams) -> Result<users::Model, DbErr> {
     use sea_orm::TransactionTrait;
     // Start a transaction with the highest isolation level to prevent race conditions.
     // Serializable makes the transaction behave as if it's the only one running.

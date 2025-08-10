@@ -11,7 +11,7 @@ use openidconnect::{
     },
 };
 
-type GoogleAuthClient = Client<
+type AuthClient = Client<
     EmptyAdditionalClaims,
     CoreAuthDisplay,
     CoreGenderClaim,
@@ -42,7 +42,8 @@ pub struct ConfigInner {
     pub decoding_key: DecodingKey,
     pub emailer: String,
     pub transponder: AsyncSmtpTransport<Tokio1Executor>,
-    pub google_auth_client: GoogleAuthClient,
+    pub google_auth_client: AuthClient,
+    pub facebook_auth_client: AuthClient,
     pub http_client: openidconnect::reqwest::Client,
 }
 
@@ -54,31 +55,58 @@ impl Config {
         #[cfg(debug_assertions)]
         dotenvy::dotenv().ok();
 
-        let google_client_id =
-            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is required");
-        let google_client_secret =
-            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is required");
-        let google_redirect_url =
-            std::env::var("GOOGLE_REDIRECT_URL").expect("GOOGLE_REDIRECT_URL is required");
-
         let http_client = openidconnect::reqwest::Client::builder()
             .redirect(openidconnect::reqwest::redirect::Policy::none())
             .build()
             .expect("Failed to build HTTP client");
 
-        let provider_metadata = CoreProviderMetadata::discover_async(
-            IssuerUrl::new("https://accounts.google.com".to_string()).unwrap(),
-            &http_client,
-        )
-        .await
-        .expect("Failed to discover provider metadata");
+        let google_auth_client = {
+            let google_client_id =
+                std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is required");
+            let google_client_secret =
+                std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is required");
+            let google_redirect_url =
+                std::env::var("GOOGLE_REDIRECT_URL").expect("GOOGLE_REDIRECT_URL is required");
 
-        let client = CoreClient::from_provider_metadata(
-            provider_metadata,
-            ClientId::new(google_client_id),
-            Some(ClientSecret::new(google_client_secret)),
-        )
-        .set_redirect_uri(RedirectUrl::new(google_redirect_url).expect("Invalid redirect URL"));
+            let provider_metadata = CoreProviderMetadata::discover_async(
+                IssuerUrl::new("https://accounts.google.com".to_string()).unwrap(),
+                &http_client,
+            )
+            .await
+            .expect("Failed to discover provider metadata");
+
+            CoreClient::from_provider_metadata(
+                provider_metadata,
+                ClientId::new(google_client_id),
+                Some(ClientSecret::new(google_client_secret)),
+            )
+            .set_redirect_uri(RedirectUrl::new(google_redirect_url).expect("Invalid redirect URL"))
+        };
+
+        let facebook_auth_client = {
+            let facebook_app_id =
+                std::env::var("FACEBOOK_APP_ID").expect("FACEBOOK_APP_ID is required");
+            let facebook_app_secret =
+                std::env::var("FACEBOOK_APP_SECRET").expect("FACEBOOK_APP_SECRET is required");
+            let facebook_redirect_url =
+                std::env::var("FACEBOOK_REDIRECT_URL").expect("FACEBOOK_REDIRECT_URL is required");
+
+            let provider_metadata = CoreProviderMetadata::discover_async(
+                IssuerUrl::new("https://www.facebook.com".to_string()).unwrap(),
+                &http_client,
+            )
+            .await
+            .expect("Failed to discover Facebook provider metadata");
+
+            CoreClient::from_provider_metadata(
+                provider_metadata,
+                ClientId::new(facebook_app_id),
+                Some(ClientSecret::new(facebook_app_secret)),
+            )
+            .set_redirect_uri(
+                RedirectUrl::new(facebook_redirect_url).expect("Invalid redirect URL"),
+            )
+        };
 
         let v = ConfigInner {
             db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is required"),
@@ -114,7 +142,8 @@ impl Config {
                 std::env::var("SMTP_PASS").expect("SMTP_PASS is required"),
             ))
             .build(),
-            google_auth_client: client,
+            google_auth_client,
+            facebook_auth_client,
             http_client,
         };
 

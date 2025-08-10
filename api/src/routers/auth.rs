@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use models::params::user::{
-    EmailAuthParams, ForgotPasswordBody, GoogleAuthParams, ResetPasswordBody,
+    AuthCodeParams, EmailAuthParams, ForgotPasswordBody, ResetPasswordBody,
 };
 use models::schemas::user::{AuthSchema, LoginSchema, TokensSchema};
 use models::{
@@ -17,7 +17,10 @@ use models::{
 };
 
 use anyhow::anyhow;
-use openidconnect::{AuthorizationCode, Nonce, TokenResponse};
+use openidconnect::core::CoreGenderClaim;
+use openidconnect::{
+    AuthorizationCode, EmptyAdditionalClaims, Nonce, OAuth2TokenResponse, TokenResponse,
+};
 
 use crate::ApiResponse;
 use crate::error::ApiError;
@@ -105,16 +108,22 @@ pub async fn reset_password_post(
 #[axum::debug_handler]
 pub async fn google_auth_post(
     State(state): State<AppState>,
-    Json(params): Json<GoogleAuthParams>,
+    Json(params): Json<AuthCodeParams>,
 ) -> Result<impl IntoResponse, ApiError> {
     let google_auth_client = &state.config.google_auth_client;
     let http_client = &state.config.http_client;
     let token_response = google_auth_client
         .exchange_code(AuthorizationCode::new(params.code))
-        .expect("Failed to exchange code")
+        .map_err(|err| {
+            eprintln!("Google token exchange error: {:?}", err);
+            anyhow!("Something went wrong!")
+        })?
         .request_async(http_client)
         .await
-        .map_err(|_| anyhow!("En error occurred"))?;
+        .map_err(|err| {
+            eprintln!("Google token exchange error: {:?}", err);
+            anyhow!("An error occurred during Google token exchange")
+        })?;
 
     let id_token = token_response
         .id_token()
@@ -127,7 +136,59 @@ pub async fn google_auth_post(
 
     let user_info: EmailAuthParams = serde_json::from_str(&serde_json::to_string(&claims)?)?;
 
-    let user = app::persistence::users::google_auth(&state, user_info).await?;
+    let user = app::persistence::users::email_auth(&state, user_info).await?;
+
+    let user_schema = UserSchema::from(user);
+    let access = app::utils::encode_data(&state.config, &user_schema)?;
+    let tokens = TokensSchema { access };
+    let login_response = LoginSchema {
+        user: user_schema,
+        tokens,
+    };
+
+    let response = ApiResponse::success("Login successful", Some(login_response));
+
+    Ok(Json(response))
+}
+
+#[axum::debug_handler]
+pub async fn facebook_auth_post(
+    State(state): State<AppState>,
+    Json(params): Json<AuthCodeParams>,
+) -> Result<impl IntoResponse, ApiError> {
+    let facebook_auth_client = &state.config.facebook_auth_client;
+    let http_client = &state.config.http_client;
+
+    let token_response = facebook_auth_client
+        .exchange_code(AuthorizationCode::new(params.code))
+        .map_err(|err| {
+            eprintln!("Facebook token exchange error: {:?}", err);
+            anyhow!("Something went wrong!")
+        })?
+        .request_async(http_client)
+        .await
+        .map_err(|err| {
+            eprintln!("Facebook token exchange error: {:?}", err);
+            anyhow!("An error occurred during Facebook token exchange")
+        })?;
+
+    // With OpenID Connect, user information is retrieved from the UserInfo endpoint.
+    let claims = facebook_auth_client
+        .user_info(token_response.access_token().clone(), None)
+        .map_err(|err| {
+            eprintln!("Failed to prepare user info request: {:?}", err);
+            anyhow!("Something went wrong!")
+        })?
+        .request_async::<EmptyAdditionalClaims, _, CoreGenderClaim>(http_client)
+        .await
+        .map_err(|err| {
+            eprintln!("Facebook user info error: {:?}", err);
+            anyhow!("Failed to get user info from Facebook")
+        })?;
+
+    let user_info: EmailAuthParams = serde_json::from_value(serde_json::to_value(claims)?)?;
+
+    let user = app::persistence::users::email_auth(&state, user_info).await?;
 
     let user_schema = UserSchema::from(user);
     let access = app::utils::encode_data(&state.config, &user_schema)?;
@@ -149,4 +210,6 @@ pub fn create_auth_router() -> Router<AppState> {
         .route("/me", get(me_get))
         .route("/forgot-password", post(forgot_password_post))
         .route("/reset-password", post(reset_password_post))
+        .route("/google", post(google_auth_post))
+        .route("/facebook", post(facebook_auth_post))
 }
