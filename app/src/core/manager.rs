@@ -32,12 +32,12 @@ const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
 const DEBOUNCE_DURATION: Duration = Duration::from_millis(200);
-const MAX_PROCESS_WAIT: Duration = Duration::from_millis(1000);
-const MAX_PROCESS_STACK_SIZE: usize = 3;
+const MAX_PROCESS_WAIT: Duration = Duration::from_millis(1500);
+const MAX_PROCESS_STACK_SIZE: usize = 5;
 
-const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(400);
+const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
 const UPDATE_ALL_MAX_STACK_SIZE: usize = 15;
-const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(3);
+const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Serialize, Debug, Clone)]
 pub struct WsFailurePayload {
@@ -186,47 +186,47 @@ struct TournamentManagerInner {
 }
 
 impl TournamentManagerInner {
-    async fn end_tournament(self: &Arc<Self>) {
-        let now = Utc::now();
-        let mut session_data = self.tournament_session_state.lock().await;
-        session_data.ended_at = Some(now);
-        std::mem::drop(session_data);
+    // async fn end_tournament(self: &Arc<Self>) {
+    //     let now = Utc::now();
+    //     let mut session_data = self.tournament_session_state.lock().await;
+    //     session_data.ended_at = Some(now);
+    //     std::mem::drop(session_data);
 
-        info!(
-            "Cleaning up manager for tournament {}",
-            &*self.tournament_id
-        );
-        match update_tournament(
-            &self.app_state,
-            UpdateTournamentParams {
-                id: Some(self.tournament_id.to_string()),
-                ended_at: Some(Some(now.fixed_offset())),
-                ..Default::default()
-            },
-        )
-        .await
-        {
-            Ok(t) => {
-                info!("successfully ended tournament: {}", t.id)
-            }
-            Err(err) => {
-                error!("Failed to end tournament: {}", err)
-            }
-        }
+    //     info!(
+    //         "Cleaning up manager for tournament {}",
+    //         &*self.tournament_id
+    //     );
+    //     match update_tournament(
+    //         &self.app_state,
+    //         UpdateTournamentParams {
+    //             id: Some(self.tournament_id.to_string()),
+    //             ended_at: Some(Some(now.fixed_offset())),
+    //             ..Default::default()
+    //         },
+    //     )
+    //     .await
+    //     {
+    //         Ok(t) => {
+    //             info!("successfully ended tournament: {}", t.id)
+    //         }
+    //         Err(err) => {
+    //             error!("Failed to end tournament: {}", err)
+    //         }
+    //     }
 
-        self.broadcast_update_data(false).await;
+    //     self.broadcast_update_data(false).await;
 
-        let manager = self.clone();
-        let evict_task = async move {
-            manager
-                .app_state
-                .tournament_registry
-                .evict(manager.tournament_id.as_str());
-        };
+    //     let manager = self.clone();
+    //     let evict_task = async move {
+    //         manager
+    //             .app_state
+    //             .tournament_registry
+    //             .evict(manager.tournament_id.as_str());
+    //     };
 
-        let evict_on = Utc::now() + TimeDelta::minutes(10);
-        crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
-    }
+    //     let evict_on = Utc::now() + TimeDelta::minutes(10);
+    //     crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
+    // }
 
     async fn broadcast_update_data(self: &Arc<Self>, start: bool) {
         let update_data_payload = {
@@ -336,7 +336,16 @@ impl TournamentManager {
                     if all_participants.iter().filter_map(|v| v.ended_at).count()
                         == all_participants.len()
                     {
-                        inner.end_tournament().await;
+                        if let Some(manager) = inner
+                            .app_state
+                            .tournament_registry
+                            .get(&inner.tournament_id)
+                        {
+                            manager.shutdown().await;
+                        } else {
+                            error!("Tournament manager not found for {}", inner.tournament_id);
+                        }
+                        //inner.end_tournament().await;
                     }
 
                     let updates_for_all = all_participants
@@ -369,7 +378,6 @@ impl TournamentManager {
                     let tournament_room_id = inner.tournament_id.to_string();
                     let io_clone = inner.app_state.socket_io.clone();
 
-                    info!("Emitting update:all for tournament {}", tournament_room_id);
                     if let Err(e) = io_clone
                         .to(tournament_room_id.clone())
                         .emit("update:all", &update_all_payload)
@@ -407,13 +415,19 @@ impl TournamentManager {
             let manager = self.clone();
 
             let end_task = async move {
-                manager.inner.end_tournament().await;
-                manager.update_all_broadcaster.shutdown().await;
+                manager.shutdown().await;
+                // manager.inner.end_tournament().await;
+                // manager.update_all_broadcaster.shutdown().await;
             };
 
             crate::scheduler::schedule_new_task(end_task, scheduled_end).ok();
         } else {
-            self.inner.end_tournament().await;
+            info!(
+                "No participants for tournament {}. Ending immediately.",
+                self.inner.tournament_id
+            );
+            self.shutdown().await;
+            //self.inner.end_tournament().await;
         }
     }
 
@@ -901,7 +915,8 @@ impl TournamentManager {
                         .is_some()
                 };
                 if started {
-                    self.inner.end_tournament().await;
+                    self.shutdown().await;
+                    //self.inner.end_tournament().await;
                 }
             }
             Ok(())
@@ -938,6 +953,79 @@ impl TournamentManager {
             started_at,
             ended_at,
         }
+    }
+
+    pub async fn shutdown(self: &Self) {
+        let mut session_data = self.inner.tournament_session_state.lock().await;
+
+        // 1. Idempotency Check: If already ending/ended, do nothing.
+        if session_data.ended_at.is_some() {
+            return;
+        }
+
+        // 2. Mark as Ended
+        let now = Utc::now();
+        session_data.ended_at = Some(now);
+        std::mem::drop(session_data); // Release lock
+
+        info!(
+            "Shutting down manager for tournament {}",
+            &*self.inner.tournament_id
+        );
+
+        // 3. Persist Final State to Database
+        if let Err(e) = update_tournament(
+            &self.inner.app_state,
+            UpdateTournamentParams {
+                id: Some(self.inner.tournament_id.to_string()),
+                ended_at: Some(Some(now.fixed_offset())),
+                ..Default::default()
+            },
+        )
+        .await
+        {
+            error!("Failed to persist final tournament state: {}", e);
+        }
+
+        // 4. Broadcast Final Update
+        self.inner.broadcast_update_data(false).await;
+
+        // 6. Shutdown Internal Components
+        self.update_all_broadcaster.shutdown().await;
+
+        // 7. Schedule Final Eviction of the Manager
+        let manager_clone = self.clone();
+        let evict_task = async move {
+            // 5. Clean Up All Associated State (Fixing the Gap)
+            // Likely not needed because participants eventually goes out of scope and gets `dropped`
+            let participant_ids: Vec<String> = manager_clone.inner.participants.keys();
+            for member_id in participant_ids {
+                manager_clone.inner.participants.delete_data(&member_id);
+                manager_clone
+                    .inner
+                    .app_state
+                    .typing_session_registry
+                    .delete_session(&member_id);
+            }
+            info!(
+                "Cleaned up {} participant sessions from registries.",
+                manager_clone.inner.participants.count()
+            );
+
+            manager_clone
+                .inner
+                .app_state
+                .tournament_registry
+                .evict(&manager_clone.inner.tournament_id);
+            info!(
+                "Evicted TournamentManager for {}",
+                &*manager_clone.inner.tournament_id
+            );
+        };
+
+        // The 10-minute grace period remains.
+        let evict_on = Utc::now() + TimeDelta::minutes(10);
+        crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
     }
 }
 
