@@ -997,7 +997,6 @@ impl TournamentManager {
         let manager_clone = self.clone();
         let evict_task = async move {
             // 5. Clean Up All Associated State (Fixing the Gap)
-            // Likely not needed because participants eventually goes out of scope and gets `dropped`
             let participant_ids: Vec<String> = manager_clone.inner.participants.keys();
             for member_id in participant_ids {
                 manager_clone.inner.participants.delete_data(&member_id);
