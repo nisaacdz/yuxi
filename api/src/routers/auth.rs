@@ -151,57 +151,57 @@ pub async fn google_auth_post(
     Ok(Json(response))
 }
 
-#[axum::debug_handler]
-pub async fn facebook_auth_post(
-    State(state): State<AppState>,
-    Json(params): Json<AuthCodeParams>,
-) -> Result<impl IntoResponse, ApiError> {
-    let facebook_auth_client = &state.config.facebook_auth_client;
-    let http_client = &state.config.http_client;
+// #[axum::debug_handler]
+// pub async fn facebook_auth_post(
+//     State(state): State<AppState>,
+//     Json(params): Json<AuthCodeParams>,
+// ) -> Result<impl IntoResponse, ApiError> {
+//     let facebook_auth_client = &state.config.facebook_auth_client;
+//     let http_client = &state.config.http_client;
 
-    let token_response = facebook_auth_client
-        .exchange_code(AuthorizationCode::new(params.code))
-        .map_err(|err| {
-            eprintln!("Facebook token exchange error: {:?}", err);
-            anyhow!("Something went wrong!")
-        })?
-        .request_async(http_client)
-        .await
-        .map_err(|err| {
-            eprintln!("Facebook token exchange error: {:?}", err);
-            anyhow!("An error occurred during Facebook token exchange")
-        })?;
+//     let token_response = facebook_auth_client
+//         .exchange_code(AuthorizationCode::new(params.code))
+//         .map_err(|err| {
+//             eprintln!("Facebook token exchange error: {:?}", err);
+//             anyhow!("Something went wrong!")
+//         })?
+//         .request_async(http_client)
+//         .await
+//         .map_err(|err| {
+//             eprintln!("Facebook token exchange error: {:?}", err);
+//             anyhow!("An error occurred during Facebook token exchange")
+//         })?;
 
-    // With OpenID Connect, user information is retrieved from the UserInfo endpoint.
-    let claims = facebook_auth_client
-        .user_info(token_response.access_token().clone(), None)
-        .map_err(|err| {
-            eprintln!("Failed to prepare user info request: {:?}", err);
-            anyhow!("Something went wrong!")
-        })?
-        .request_async::<EmptyAdditionalClaims, _, CoreGenderClaim>(http_client)
-        .await
-        .map_err(|err| {
-            eprintln!("Facebook user info error: {:?}", err);
-            anyhow!("Failed to get user info from Facebook")
-        })?;
+//     // With OpenID Connect, user information is retrieved from the UserInfo endpoint.
+//     let claims = facebook_auth_client
+//         .user_info(token_response.access_token().clone(), None)
+//         .map_err(|err| {
+//             eprintln!("Failed to prepare user info request: {:?}", err);
+//             anyhow!("Something went wrong!")
+//         })?
+//         .request_async::<EmptyAdditionalClaims, _, CoreGenderClaim>(http_client)
+//         .await
+//         .map_err(|err| {
+//             eprintln!("Facebook user info error: {:?}", err);
+//             anyhow!("Failed to get user info from Facebook")
+//         })?;
 
-    let user_info: EmailAuthParams = serde_json::from_value(serde_json::to_value(claims)?)?;
+//     let user_info: EmailAuthParams = serde_json::from_value(serde_json::to_value(claims)?)?;
 
-    let user = app::persistence::users::email_auth(&state, user_info).await?;
+//     let user = app::persistence::users::email_auth(&state, user_info).await?;
 
-    let user_schema = UserSchema::from(user);
-    let access = app::utils::encode_data(&state.config, &user_schema)?;
-    let tokens = TokensSchema { access };
-    let login_response = LoginSchema {
-        user: user_schema,
-        tokens,
-    };
+//     let user_schema = UserSchema::from(user);
+//     let access = app::utils::encode_data(&state.config, &user_schema)?;
+//     let tokens = TokensSchema { access };
+//     let login_response = LoginSchema {
+//         user: user_schema,
+//         tokens,
+//     };
 
-    let response = ApiResponse::success("Login successful", Some(login_response));
+//     let response = ApiResponse::success("Login successful", Some(login_response));
 
-    Ok(Json(response))
-}
+//     Ok(Json(response))
+// }
 
 pub fn create_auth_router() -> Router<AppState> {
     Router::new()
@@ -211,5 +211,5 @@ pub fn create_auth_router() -> Router<AppState> {
         .route("/forgot-password", post(forgot_password_post))
         .route("/reset-password", post(reset_password_post))
         .route("/google", post(google_auth_post))
-        .route("/facebook", post(facebook_auth_post))
+        //.route("/facebook", post(facebook_auth_post))
 }

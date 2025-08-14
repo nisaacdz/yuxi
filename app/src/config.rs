@@ -43,7 +43,7 @@ pub struct ConfigInner {
     pub emailer: String,
     pub transponder: AsyncSmtpTransport<Tokio1Executor>,
     pub google_auth_client: AuthClient,
-    pub facebook_auth_client: AuthClient,
+    //pub facebook_auth_client: AuthClient,
     pub http_client: openidconnect::reqwest::Client,
 }
 
@@ -83,30 +83,30 @@ impl Config {
             .set_redirect_uri(RedirectUrl::new(google_redirect_url).expect("Invalid redirect URL"))
         };
 
-        let facebook_auth_client = {
-            let facebook_app_id =
-                std::env::var("FACEBOOK_APP_ID").expect("FACEBOOK_APP_ID is required");
-            let facebook_app_secret =
-                std::env::var("FACEBOOK_APP_SECRET").expect("FACEBOOK_APP_SECRET is required");
-            let facebook_redirect_url =
-                std::env::var("FACEBOOK_REDIRECT_URL").expect("FACEBOOK_REDIRECT_URL is required");
+        // let facebook_auth_client = {
+        //     let facebook_app_id =
+        //         std::env::var("FACEBOOK_APP_ID").expect("FACEBOOK_APP_ID is required");
+        //     let facebook_app_secret =
+        //         std::env::var("FACEBOOK_APP_SECRET").expect("FACEBOOK_APP_SECRET is required");
+        //     let facebook_redirect_url =
+        //         std::env::var("FACEBOOK_REDIRECT_URL").expect("FACEBOOK_REDIRECT_URL is required");
 
-            let provider_metadata = CoreProviderMetadata::discover_async(
-                IssuerUrl::new("https://www.facebook.com".to_string()).unwrap(),
-                &http_client,
-            )
-            .await
-            .expect("Failed to discover Facebook provider metadata");
+        //     let provider_metadata = CoreProviderMetadata::discover_async(
+        //         IssuerUrl::new("https://www.facebook.com".to_string()).unwrap(),
+        //         &http_client,
+        //     )
+        //     .await
+        //     .expect("Failed to discover Facebook provider metadata");
 
-            CoreClient::from_provider_metadata(
-                provider_metadata,
-                ClientId::new(facebook_app_id),
-                Some(ClientSecret::new(facebook_app_secret)),
-            )
-            .set_redirect_uri(
-                RedirectUrl::new(facebook_redirect_url).expect("Invalid redirect URL"),
-            )
-        };
+        //     CoreClient::from_provider_metadata(
+        //         provider_metadata,
+        //         ClientId::new(facebook_app_id),
+        //         Some(ClientSecret::new(facebook_app_secret)),
+        //     )
+        //     .set_redirect_uri(
+        //         RedirectUrl::new(facebook_redirect_url).expect("Invalid redirect URL"),
+        //     )
+        // };
 
         let v = ConfigInner {
             db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL is required"),
@@ -143,7 +143,7 @@ impl Config {
             ))
             .build(),
             google_auth_client,
-            facebook_auth_client,
+            //facebook_auth_client,
             http_client,
         };
 
