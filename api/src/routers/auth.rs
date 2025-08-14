@@ -17,9 +17,10 @@ use models::{
 };
 
 use anyhow::anyhow;
-use openidconnect::core::CoreGenderClaim;
+//use openidconnect::core::CoreGenderClaim;
 use openidconnect::{
-    AuthorizationCode, EmptyAdditionalClaims, Nonce, OAuth2TokenResponse, TokenResponse,
+    AuthorizationCode, /*EmptyAdditionalClaims,*/ Nonce,
+    /*OAuth2TokenResponse,*/ TokenResponse,
 };
 
 use crate::ApiResponse;
@@ -211,5 +212,5 @@ pub fn create_auth_router() -> Router<AppState> {
         .route("/forgot-password", post(forgot_password_post))
         .route("/reset-password", post(reset_password_post))
         .route("/google", post(google_auth_post))
-        //.route("/facebook", post(facebook_auth_post))
+    //.route("/facebook", post(facebook_auth_post))
 }
