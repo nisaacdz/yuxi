@@ -41,6 +41,7 @@ CREATE TABLE typing_history (
     completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+
 ALTER TABLE tournaments ADD CONSTRAINT valid_schedule CHECK (scheduled_for >= created_at);
 ALTER TABLE typing_history ADD CONSTRAINT valid_accuracy CHECK (accuracy BETWEEN 0 AND 100);
 ALTER TABLE typing_history ADD CONSTRAINT valid_speed CHECK (speed >= 0);
