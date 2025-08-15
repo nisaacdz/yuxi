@@ -106,6 +106,10 @@ pub async fn reset_password_post(
     )))
 }
 
+fn empty_nonce_verifier(_: Option<&Nonce>) -> Result<(), String> {
+    Ok(())
+}
+
 #[axum::debug_handler]
 pub async fn google_auth_post(
     State(state): State<AppState>,
@@ -132,7 +136,7 @@ pub async fn google_auth_post(
 
     let claims = id_token.claims(
         &google_auth_client.id_token_verifier(),
-        &Nonce::new_random(),
+        empty_nonce_verifier,
     )?;
 
     let user_info: EmailAuthParams = serde_json::from_str(&serde_json::to_string(&claims)?)?;
