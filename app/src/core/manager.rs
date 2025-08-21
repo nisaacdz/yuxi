@@ -31,8 +31,8 @@ use crate::{
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
-const DEBOUNCE_DURATION: Duration = Duration::from_millis(80);
-const MAX_PROCESS_WAIT: Duration = Duration::from_millis(1000);
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(50);
+const MAX_PROCESS_WAIT: Duration = Duration::from_millis(500);
 const MAX_PROCESS_STACK_SIZE: usize = 3;
 
 const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
@@ -186,48 +186,6 @@ struct TournamentManagerInner {
 }
 
 impl TournamentManagerInner {
-    // async fn end_tournament(self: &Arc<Self>) {
-    //     let now = Utc::now();
-    //     let mut session_data = self.tournament_session_state.lock().await;
-    //     session_data.ended_at = Some(now);
-    //     std::mem::drop(session_data);
-
-    //     info!(
-    //         "Cleaning up manager for tournament {}",
-    //         &*self.tournament_id
-    //     );
-    //     match update_tournament(
-    //         &self.app_state,
-    //         UpdateTournamentParams {
-    //             id: Some(self.tournament_id.to_string()),
-    //             ended_at: Some(Some(now.fixed_offset())),
-    //             ..Default::default()
-    //         },
-    //     )
-    //     .await
-    //     {
-    //         Ok(t) => {
-    //             info!("successfully ended tournament: {}", t.id)
-    //         }
-    //         Err(err) => {
-    //             error!("Failed to end tournament: {}", err)
-    //         }
-    //     }
-
-    //     self.broadcast_update_data(false).await;
-
-    //     let manager = self.clone();
-    //     let evict_task = async move {
-    //         manager
-    //             .app_state
-    //             .tournament_registry
-    //             .evict(manager.tournament_id.as_str());
-    //     };
-
-    //     let evict_on = Utc::now() + TimeDelta::minutes(10);
-    //     crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
-    // }
-
     async fn broadcast_update_data(self: &Arc<Self>, start: bool) {
         let update_data_payload = {
             let (started_at, ended_at) = {
@@ -411,16 +369,28 @@ impl TournamentManager {
             session_state_guard.started_at = Some(current_time);
             std::mem::drop(session_state_guard);
 
+            for socket in self
+                .inner
+                .app_state
+                .socket_io
+                .within(self.inner.tournament_id.to_string())
+                .sockets()
+            {
+                self.register_type_listener(socket);
+            }
+
             self.inner.broadcast_update_data(true).await;
             let manager = self.clone();
 
-            let end_task = async move {
-                manager.shutdown().await;
-                // manager.inner.end_tournament().await;
-                // manager.update_all_broadcaster.shutdown().await;
-            };
-
-            crate::scheduler::schedule_new_task(end_task, scheduled_end).ok();
+            crate::scheduler::schedule_new_task(
+                async move {
+                    manager.shutdown().await;
+                    // manager.inner.end_tournament().await;
+                    // manager.update_all_broadcaster.shutdown().await;
+                },
+                scheduled_end,
+            )
+            .ok();
         } else {
             info!(
                 "No participants for tournament {}. Ending immediately.",
@@ -567,7 +537,7 @@ impl TournamentManager {
 
         // Register other event listeners for this socket
         self.clone()
-            .register_socket_listeners(socket.clone(), spectator);
+            .register_base_listeners(socket.clone(), spectator);
 
         info!(
             "Member {} connected to tournament {}",
@@ -577,16 +547,6 @@ impl TournamentManager {
         Ok(())
     }
 
-    /// Processes a sequence of typed characters from a user.
-    ///
-    /// Updates the user's typing session state (position, speed, accuracy),
-    /// saves the updated session to the cache, and broadcasts the progress
-    /// to all participants in the tournament room.
-    ///
-    /// # Arguments
-    ///
-    /// * `socket` - The user's socket connection reference.
-    /// * `typed_chars` - A vector of characters typed by the user since the last update.
     pub async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>) {
         let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
@@ -595,7 +555,6 @@ impl TournamentManager {
             return;
         }
 
-        let typing_text = self.inner.typing_text.read().unwrap().clone();
         let cache = self.inner.participants.clone();
 
         let typing_session = match cache.get_data(&member.id) {
@@ -607,6 +566,15 @@ impl TournamentManager {
                 return;
             }
         };
+
+        if typing_session.ended_at.is_some() {
+            warn!(member_id = %typing_session.member.id, "Received typing input after session ended. Ignoring.");
+            let failure_payload = WsFailurePayload::new(2211, "Your session has ended.");
+            socket.emit("type:failure", &failure_payload).ok();
+            return;
+        }
+
+        let typing_text = self.inner.typing_text.read().unwrap().clone();
 
         let challenge_text_bytes = typing_text.as_bytes();
 
@@ -638,17 +606,12 @@ impl TournamentManager {
         self.update_all_broadcaster.trigger();
     }
 
-    fn register_socket_listeners(self: Self, socket: SocketRef, spectator: bool) {
+    fn register_type_listener(self: &Self, socket: SocketRef) {
         let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
-        if !spectator {
-            // wait period before processing a new character
+        if member.participant {
             let debounce_duration = DEBOUNCE_DURATION;
-            // user should only experience at worst 3s lag time
-            // but will likely be in millis under normal circumstances
             let max_process_wait = MAX_PROCESS_WAIT;
-            // processing shouldn't lag behind by more than 15 chars from current position
-            // but will likely be instantaneous under normal circumstances
             let max_process_stack_size = MAX_PROCESS_STACK_SIZE;
             let cleanup_wait_duration = INACTIVITY_TIMEOUT_DURATION;
             let manager_clone = self.clone();
@@ -690,6 +653,10 @@ impl TournamentManager {
                 }
             });
         }
+    }
+
+    fn register_base_listeners(self: Self, socket: SocketRef, spectator: bool) {
+        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         socket.on("check", {
             let manager_clone_check = self.clone(); // Clone manager for the async block
@@ -1041,7 +1008,7 @@ fn process_typing_input(
     let text_len = challenge_text.len();
 
     for current_char in typed_chars {
-        if session.correct_position >= text_len && session.ended_at.is_some() {
+        if session.correct_position >= text_len {
             warn!(user_id=%session.member.id, "Received typing input after session ended. Ignoring.");
             break;
         }

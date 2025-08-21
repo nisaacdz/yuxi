@@ -44,7 +44,7 @@ pub fn register_tournament_namespace(app_state: AppState) {
             let mut noauth = String::new();
 
             let tournament_room_member = match &auth_state.user {
-                Some(user) => TournamentRoomMember::from_user(user, anonymous),
+                Some(user) => TournamentRoomMember::from_user(user, anonymous, !spectator),
                 None => match socket
                     .req_parts()
                     .headers
@@ -52,11 +52,19 @@ pub fn register_tournament_namespace(app_state: AppState) {
                     .map(|value| decode_noauth(value.as_ref()))
                     .flatten()
                 {
-                    Some(id) => TournamentRoomMember { id, user: None },
+                    Some(id) => TournamentRoomMember {
+                        id,
+                        user: None,
+                        participant: !spectator,
+                    },
                     None => {
                         let id = Uuid::new_v4().to_string();
                         noauth = encode_noauth(&id);
-                        TournamentRoomMember { id, user: None }
+                        TournamentRoomMember {
+                            id,
+                            user: None,
+                            participant: !spectator,
+                        }
                     }
                 },
             };

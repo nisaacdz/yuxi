@@ -24,10 +24,11 @@ pub struct TournamentRoomUserProfile {
 pub struct TournamentRoomMember {
     pub id: String,
     pub user: Option<TournamentRoomUserProfile>,
+    pub participant: bool,
 }
 
 impl TournamentRoomMember {
-    pub fn from_user(user: &UserSchema, anonymous: bool) -> Self {
+    pub fn from_user(user: &UserSchema, anonymous: bool, participant: bool) -> Self {
         Self {
             id: TournamentRoomMember::get_id(&user.id),
             user: if anonymous {
@@ -37,6 +38,7 @@ impl TournamentRoomMember {
                     username: user.username.clone(),
                 })
             },
+            participant,
         }
     }
 
