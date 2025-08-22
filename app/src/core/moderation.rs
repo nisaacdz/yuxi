@@ -12,11 +12,8 @@ enum State {
     Processing,
 }
 
-struct Inner<F, Fut>
-where
-    F: FnOnce(Vec<char>) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
+struct Inner<F, Fut> {
+    rid: i32,
     /// Characters accumulated since the last processor execution started.
     accumulated_chars: Vec<char>,
     /// The processor function provided by the most recent `call`.
@@ -41,11 +38,7 @@ where
 /// bypassed if either the `max_process_stack_size` or `max_process_wait` thresholds are met,
 /// leading to immediate scheduling of the processor (though execution still waits if another
 /// processor instance is currently running).
-pub struct FrequencyMonitor<F, Fut>
-where
-    F: FnOnce(Vec<char>) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
+pub struct FrequencyMonitor<F, Fut> {
     /**
      * Shared, mutable inner state protected by `Arc<Mutex>`.
      */
@@ -78,7 +71,7 @@ where
 
 impl<F, Fut> FrequencyMonitor<F, Fut>
 where
-    F: FnOnce(Vec<char>) -> Fut + Send + Sync + 'static,
+    F: FnOnce(Vec<char>, i32) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     /// Creates a new `FrequencyMonitor` with specified configuration.
@@ -99,6 +92,7 @@ where
 
         Self {
             inner: Arc::new(Mutex::new(Inner {
+                rid: i32::MIN,
                 accumulated_chars: Vec::new(),
                 next_processor: None,
                 state: State::Idle,
@@ -148,10 +142,11 @@ where
     ///
     /// * `c`: The character to accumulate.
     /// * `processor`: The `FnOnce` closure to be executed for the accumulated characters. It consumes the characters (`Vec<char>`).
-    pub async fn call(&self, c: char, processor: F) {
+    pub async fn call(&self, c: char, rid: i32, processor: F) {
         let mut inner_lock = self.inner.lock().await;
 
         inner_lock.accumulated_chars.push(c);
+        inner_lock.rid = rid;
         inner_lock.next_processor = Some(processor);
 
         match inner_lock.state {
@@ -209,7 +204,7 @@ fn spawn_processing_task<F, Fut>(
     max_process_stack_size: usize,
 ) -> JoinHandle<()>
 where
-    F: FnOnce(Vec<char>) -> Fut + Send + Sync + 'static,
+    F: FnOnce(Vec<char>, i32) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     tokio::spawn(async move {
@@ -232,6 +227,8 @@ where
             return;
         }
 
+        let rid = inner_lock.rid;
+
         // Take accumulated characters.
         let chars_to_process = std::mem::take(&mut inner_lock.accumulated_chars);
 
@@ -253,7 +250,7 @@ where
 
         // Execute the processor (consumes processor_for_this_task).
         // println!("Task: Executing processor for '{}'...", chars_to_process.iter().collect::<String>());
-        processor_for_this_task(chars_to_process).await; // F is consumed here
+        processor_for_this_task(chars_to_process, rid).await; // F is consumed here
 
         let finish_time = Instant::now(); // Record finish time immediately after await completes.
         // println!("Task: Processor execution finished.");
@@ -316,7 +313,7 @@ mod tests {
     // Counter for processor calls
     static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-    async fn processor(chars: Vec<char>) {
+    async fn processor(chars: Vec<char>, _: i32) {
         CALL_COUNT.fetch_add(1, Ordering::SeqCst);
         print!("|");
         for char in chars {
@@ -338,13 +335,13 @@ mod tests {
             1000,                      // Large stack size
         );
 
-        monitor.call('a', processor).await;
-        monitor.call('b', processor).await;
+        monitor.call('a', 0, processor).await;
+        monitor.call('b', 1, processor).await;
         sleep(Duration::from_millis(50)).await; // Less than debounce
-        monitor.call('c', processor).await; // Last processor for this burst
+        monitor.call('c', 2, processor).await; // Last processor for this burst
         sleep(Duration::from_millis(150)).await; // Wait > 100ms debounce
 
-        monitor.call('d', processor).await; // Start new debounce cycle
+        monitor.call('d', 3, processor).await; // Start new debounce cycle
         sleep(Duration::from_millis(150)).await;
         println!();
 
@@ -367,9 +364,9 @@ mod tests {
             3, // Trigger at 3 chars
         );
 
-        monitor.call('a', processor).await; // 1 char
-        monitor.call('b', processor).await; // 2 chars
-        monitor.call('c', processor).await; // 3 chars -> SHOULD schedule immediately (no sleep)
+        monitor.call('a', 4, processor).await; // 1 char
+        monitor.call('b', 5, processor).await; // 2 chars
+        monitor.call('c', 6, processor).await; // 3 chars -> SHOULD schedule immediately (no sleep)
 
         // Since it should schedule immediately, processing should start very soon after call('c')
         // Wait just enough for processing (50ms) + small buffer
@@ -381,7 +378,7 @@ mod tests {
             "Expected immediate run due to stack size"
         );
 
-        monitor.call('d', processor).await; // Start normal debounce for next run
+        monitor.call('d', 7, processor).await; // Start normal debounce for next run
         sleep(Duration::from_millis(550)).await; // Wait > 500ms debounce
 
         assert_eq!(
@@ -404,7 +401,7 @@ mod tests {
         );
 
         // First run normally after debounce
-        monitor.call('a', processor).await;
+        monitor.call('a', 8, processor).await;
         sleep(Duration::from_millis(550)).await; // Wait > debounce & > max_wait
         assert_eq!(
             CALL_COUNT.load(Ordering::SeqCst),
@@ -414,7 +411,7 @@ mod tests {
 
         // Wait longer than max_process_wait (200ms) but less than debounce (500ms)
         sleep(Duration::from_millis(250)).await;
-        monitor.call('b', processor).await; // Should schedule immediately
+        monitor.call('b', 9, processor).await; // Should schedule immediately
 
         // Wait just enough for processing (50ms) + buffer
         sleep(Duration::from_millis(100)).await;
@@ -437,15 +434,15 @@ mod tests {
             1000,
         );
 
-        monitor.call('x', processor).await;
-        monitor.call('y', processor).await; // Last proc for first run
+        monitor.call('x', 10, processor).await;
+        monitor.call('y', 11, processor).await; // Last proc for first run
 
         // Wait for debounce (100ms) to trigger processing of "xy"
         sleep(Duration::from_millis(110)).await;
 
         // Processing of "xy" should have started (takes 50ms).
         // Call 'z' during this 50ms window.
-        monitor.call('z', processor).await; // Store 'z' and proc B
+        monitor.call('z', 12, processor).await; // Store 'z' and proc B
 
         // Wait long enough for:
         // 1. overlap-A to finish (~50ms from its start)

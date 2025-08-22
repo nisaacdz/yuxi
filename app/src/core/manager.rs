@@ -31,13 +31,13 @@ use crate::{
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
-const DEBOUNCE_DURATION: Duration = Duration::from_millis(50);
-const MAX_PROCESS_WAIT: Duration = Duration::from_millis(500);
-const MAX_PROCESS_STACK_SIZE: usize = 3;
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+const MAX_PROCESS_WAIT: Duration = Duration::from_millis(2000);
+const MAX_PROCESS_STACK_SIZE: usize = 5;
 
-const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
-const UPDATE_ALL_MAX_STACK_SIZE: usize = 15;
-const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(5);
+const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(1000);
+const UPDATE_ALL_MAX_STACK_SIZE: usize = 20;
+const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Serialize, Debug, Clone)]
 pub struct WsFailurePayload {
@@ -97,6 +97,7 @@ struct PartialParticipantDataForUpdate<'a> {
 #[derive(Serialize, Debug, Clone)]
 struct UpdateMePayload {
     updates: PartialParticipantData,
+    rid: i32,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -174,6 +175,7 @@ struct UpdateDataPayload {
 #[derive(serde::Deserialize, Debug)]
 struct TypeEventPayload {
     character: char,
+    rid: i32,
 }
 
 struct TournamentManagerInner {
@@ -547,7 +549,7 @@ impl TournamentManager {
         Ok(())
     }
 
-    pub async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>) {
+    pub async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>, rid: i32) {
         let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
 
         if typed_chars.is_empty() {
@@ -597,6 +599,7 @@ impl TournamentManager {
 
         let update_me_payload = UpdateMePayload {
             updates: changes.clone(),
+            rid
         };
 
         if let Err(e) = socket.emit("update:me", &update_me_payload) {
@@ -640,11 +643,11 @@ impl TournamentManager {
                 let frequency_monitor = frequency_monitor.clone();
                 let timeout_monitor = timeout_monitor.clone();
                 let manager_clone = self.clone();
-                async move |socket: SocketRef, Data::<TypeEventPayload>(TypeEventPayload { character })| {
+                async move |socket: SocketRef, Data::<TypeEventPayload>(TypeEventPayload { character, rid })| {
                     let processor = async move {
                         frequency_monitor
-                            .call(character, move |chars: Vec<char>| {
-                                Self::handle_typing(manager_clone, socket, chars)
+                            .call(character, rid, move |chars: Vec<char>, rid: i32| {
+                                Self::handle_typing(manager_clone, socket, chars, rid)
                             })
                             .await;
                     };
