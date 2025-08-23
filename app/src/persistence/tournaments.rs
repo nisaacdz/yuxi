@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::Utc;
 use models::domains::sea_orm_active_enums::TournamentPrivacy;
 use models::queries::TournamentPaginationQuery;
@@ -74,11 +76,15 @@ pub async fn create_tournament(
 ) -> Result<tournaments::Model, DbErr> {
     let id = nanoid::nanoid!(TOURNAMENT_ID_LENGTH, &super::ID_ALPHABET);
 
+    let scheduled_for_earliest = Utc::now() + Duration::from_secs(30);
+
     tournaments::ActiveModel {
         id: Set(id),
         title: Set(params.title),
         description: Set(params.description),
-        scheduled_for: Set(params.scheduled_for),
+        scheduled_for: Set(params
+            .scheduled_for
+            .max(scheduled_for_earliest.fixed_offset())),
         created_by: Set(user.id.clone()),
         privacy: Set(TournamentPrivacy::Open),
         text_options: Set(params.text_options.map(TextOptions::to_value)),

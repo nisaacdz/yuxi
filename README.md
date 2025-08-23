@@ -1,124 +1,87 @@
 # WebSocket API Specification: Typing Tournament
 
-This document describes the real-time and HTTP APIs as implemented today. It preserves the existing structure and tone while aligning terms, events, and payloads with the Rust code.
+This document describes the real-time and HTTP APIs as implemented in the current codebase. It aligns all terms, events, and payloads with the authoritative Rust implementation.
 
 ## 1. Core Principles
 
 ### 1.1. Communication Model
 
-The socket API uses a request-response pattern for client-initiated actions: `eventName` → `eventName:success` or `eventName:failure` (where applicable). The server also pushes room-wide updates.
+The API follows a standard request-response pattern for client-initiated actions (`eventName` → `eventName:success` or `eventName:failure`). The server also pushes unsolicited, room-wide updates to all connected clients.
 
 ### 1.2. Identity & Tournament Association (Handshake)
 
-Clients connect to a tournament by including `id` as a query parameter in the WebSocket URL. The server associates the socket with the tournament room identified by that `id`.
+A client connects to a specific tournament by providing the tournament `id` as a query parameter in the WebSocket connection URL. The server then associates that socket connection with the corresponding tournament "room".
 
-Key concepts:
+**Key Identity Concepts:**
 
-- AuthSchema (server-side): Per-connection context with `user: Option<UserSchema>`.
-- TournamentRoomMember (the participant “member”): Has an `id` and optional `user { username }` profile.
-- Member ID:
-  - Authenticated: Derived from `user.id` (currently a passthrough; see TODO in code for future hardening).
-  - Unauthenticated: Generated on first join (UUIDv4) or recovered from the `x-noauth-unique` header.
+*   **AuthSchema (Server-Side):** Represents the connection's authentication context, containing an `Option<UserSchema>`.
+*   **TournamentRoomMember:** The canonical representation of a participant within a tournament. It has a stable `id` and an optional `user` profile.
+*   **Member ID:**
+    *   **Authenticated User:** The `member.id` is derived from the authenticated `user.id`.
+    *   **Unauthenticated User:** The `member.id` is a UUIDv4 generated on the first connection. This ID can be recovered on subsequent connections if the client provides the `x-noauth-unique` header.
 
-Joining a tournament:
+**Joining a Tournament:**
 
-1. Authenticated participant (default)
+1.  **Authenticated Participant (Default):**
+    *   Connect to: `namespaceUrl?id=<tournamentId>`
+    *   The server derives `member.id` from the user's JWT and populates `member.user` with their profile.
 
-- Connect to `namespaceUrl?id=<tournamentId>`.
-- Server derives `member.id` from `AuthSchema.user.id`, and `member.user.username = user.username`.
+2.  **Authenticated but Anonymous:**
+    *   Connect to: `namespaceUrl?id=<tournamentId>&anonymous=true`
+    *   The server uses the authenticated `user.id` to derive `member.id` but sets `member.user` to `null` to preserve anonymity for the session.
 
-2. Authenticated but anonymous
+3.  **Unauthenticated Participant (Always Anonymous):**
+    *   Connect to: `namespaceUrl?id=<tournamentId>`
+    *   If the request includes a valid `x-noauth-unique` header, the server decodes it to recover the existing `member.id`.
+    *   Otherwise, the server generates a new `member.id` and returns a token in the `join:success.noauth` payload. The client **should** persist this token and send it back in the `x-noauth-unique` header on all future WebSocket and HTTP requests to maintain a consistent identity.
 
-- Connect to `namespaceUrl?id=<tournamentId>&anonymous=true`.
-- Server still derives `member.id` from `AuthSchema.user.id`, but sets `member.user = null` for this session.
+4.  **Spectator:**
+    *   Connect to: `namespaceUrl?id=<tournamentId>&spectator=true`
+    *   Spectators are placed in the tournament room to receive broadcasts but are not considered participants. They cannot emit participant-only events like `type`.
 
-3. Unauthenticated participant (always anonymous)
+**Connection Confirmation:**
 
-- Connect to `namespaceUrl?id=<tournamentId>`.
-- If request includes a valid `x-noauth-unique` header, server decodes it to recover `member.id`.
-- If not, server generates a new `member.id` and returns a token in `join:success.noauth`. The client should persist this and send it back via the `x-noauth-unique` header on future HTTP/WebSocket requests.
-
-4. Spectator
-
-- Connect with `spectator=true`: `namespaceUrl?id=<tournamentId>&spectator=true`.
-- Spectators are in the room for broadcasts but don’t get participant-only listeners (`type`, `me`). They won’t be added to `participants`.
-
-Connection confirmation:
-
-- On success: `join:success { data, member, participants, noauth }`.
-- On failure: `join:failure { code, message }` and the server disconnects.
-
-Client examples:
-
-- Authenticated
-
-```ts
-const socket = io(namespaceUrl, { query: { id: tournamentId } });
-```
-
-- Authenticated + anonymous
-
-```ts
-const socket = io(namespaceUrl, {
-  query: { id: tournamentId, anonymous: "true" },
-});
-```
-
-- Unauthenticated
-
-```ts
-const socket = io(namespaceUrl, {
-  query: { id: tournamentId },
-  extraHeaders: noauth ? { "x-noauth-unique": noauth } : {},
-});
-```
-
-- Spectator
-
-```ts
-const socket = io(namespaceUrl, {
-  query: { id: tournamentId, spectator: "true" },
-});
-```
+*   **On Success:** The server emits a `join:success` event with the initial state.
+*   **On Failure:** The server emits a `join:failure` event with an error code and message, then immediately disconnects the socket.
 
 ### 1.3. WebSocket Transport Configuration
 
-Transport order may include `polling`, `websocket`, `webtransport` as needed by the client. Server supports Socket.IO via socketioxide.
+> **Important: Connection must start with HTTP Polling**
+>
+> The client-side Socket.IO transport configuration **must** include `polling` as the first option (e.g., `transports: ["polling", "websocket"]`). This is a mandatory requirement for two primary reasons:
+>
+> 1.  **Middleware Execution:** The server is built on Axum, and critical logic (authentication, CORS, logging) is implemented as standard HTTP middleware. The initial connection must be an HTTP request to ensure this middleware chain is executed correctly.
+> 2.  **Custom Headers:** Authentication (`Authorization`) and anonymous identity (`x-noauth-unique`) are passed via custom HTTP headers. The WebSocket protocol itself does not support custom headers after the initial handshake. Starting with HTTP polling ensures these headers are received and processed by the server before the connection is upgraded to a persistent WebSocket.
 
 ### 1.4. Error Handling
 
-All `:failure` payloads are `WsFailurePayload { code: number, message: string }`.
+All `:failure` payloads conform to the `WsFailurePayload { code: number, message: string }` structure.
 
-### 1.5. Timing & flow controls
+### 1.5. Timing & Flow Controls
 
-- Join deadline: participants can’t join within 15s of start (`JOIN_DEADLINE = 15s`).
-- Inactivity timeout: participant is marked ended after 30s inactivity (`INACTIVITY_TIMEOUT_DURATION`).
-- Typing event batching: debounce 200ms, max stack 3, max wait 1000ms.
-- `update:all` broadcast: debounce 400ms, max stack 15, max wait 3s.
-- Tournament start triggers `update:data` (text + startedAt); end triggers `update:data` (endedAt).
+The server manages event flow to ensure efficiency and prevent abuse:
+
+*   **Join Deadline:** Participants are prevented from joining a tournament that is about to start or has already started.
+*   **Inactivity Timeout:** If a participant stops sending `type` events for a specific duration while the tournament is active, the server will automatically mark their session as finished.
+*   **Typing Event Batching:** To reduce network traffic, individual character inputs from the `type` event are buffered and processed in batches on the server. This is managed by a combination of debouncing (waiting for a pause in typing), a stack size limit (processing after N characters), and a maximum wait time (processing after a certain time has passed, regardless of activity).
+*   **Broadcast Throttling:** The `update:all` event, which sends data about all participants, is throttled to avoid flooding clients with messages during periods of high activity.
 
 ---
 
-## 2. Authentication & Anonymous Participation
+## 2. Optimistic Updates & Client-Side Prediction
 
-### 2.1. Authenticated Members
+The API is designed to support a highly responsive user experience through **Optimistic Updates** (also known as Client-Side Prediction). This is achieved using a Request ID (`rid`).
 
-- Identified by `AuthSchema.user`.
-- `member.id` is derived from `user.id`.
-- `anonymous=true` masks `member.user` (null) but keeps the same `member.id`.
+When the client sends a `type` event, it must include a unique, monotonically increasing `rid`. The server will process the event and then include the *same* `rid` in the corresponding `update:me` payload.
 
-### 2.2. Unauthenticated Members
+**Recommended Client Implementation:**
 
-- Not logged in; always anonymous.
-- Server encodes/decodes a “noauth” token which represents `member.id`.
-  - First-time join without header: server creates `member.id` and returns `noauth` in `join:success`.
-  - Subsequent requests: client includes `x-noauth-unique` header; server decodes to recover `member.id`.
+1.  **Local Update:** When the user types a character, immediately update the local UI (e.g., advance the cursor, recalculate WPM). Do not wait for the server.
+2.  **Send Event:** Generate a new `rid` and send the `type` event with the typed character and the `rid`.
+3.  **Receive Confirmation:** When the `update:me` event arrives from the server, check its `rid`.
+4.  **Reconcile State:** If the incoming `rid` matches the last `rid` you sent, you can trust the server's payload as the authoritative state and replace your locally predicted state with it. This corrects any minor discrepancies (e.g., in WPM calculations) between the client and server.
 
-### 2.3. Live flags in HTTP tournament lists
-
-- For authenticated requests, server uses `user.id`.
-- For unauthenticated requests, server tries `x-noauth-unique` to identify `member.id`.
-- Result includes live flags: `participating: boolean`, `participantCount: number` and `startedAt`/`endedAt` derived from in-memory state when available.
+This flow makes the UI feel instantaneous while still ensuring eventual consistency with the server's state.
 
 ---
 
@@ -126,12 +89,12 @@ All `:failure` payloads are `WsFailurePayload { code: number, message: string }`
 
 Events the client may emit:
 
-- `type` (participants only): `{ character: string }` (one character at a time). Triggers `update:me` and aggregated `update:all`; on error yields `type:failure`.
-- `check`: `{}` → `check:success { status: "upcoming" | "started" | "ended" }`.
-- `leave`: `{}` → `leave:success` (always sent; spectators are OK to call).
-- `me` (participants only): `{}` → `me:success` or `me:failure`.
-- `all`: `{}` → `all:success` with all current participants.
-- `data`: `{}` → `data:success` with current tournament data.
+*   `type` (Participants only): `{ character: string, rid: number }`. Triggers an `update:me` response and contributes to the throttled `update:all` broadcast.
+*   `check`: `{}` → `check:success { status: "upcoming" | "started" | "ended" }`.
+*   `leave`: `{}` → `leave:success`.
+*   `me` (Participants only): `{}` → `me:success` or `me:failure`.
+*   `all`: `{}` → `all:success` with data for all current participants.
+*   `data`: `{}` → `data:success` with the current state of the tournament.
 
 ---
 
@@ -139,45 +102,34 @@ Events the client may emit:
 
 ### 4.1. Responses to Client Requests
 
-- `join:success` → `JoinSuccessPayload`
-- `join:failure` → `WsFailurePayload`
-- `me:success` | `me:failure`
-- `all:success`
-- `leave:success`
-- `type:failure`
-- `data:success`
-- `check:success`
+*   `join:success` | `join:failure`
+*   `me:success` | `me:failure`
+*   `all:success`
+*   `leave:success`
+*   `type:failure`
+*   `data:success`
+*   `check:success`
 
-Notes:
+### 4.2. Proactive Server Updates
 
-- The current server doesn’t emit `all:failure`, `data:failure`, `check:failure`, or `leave:failure`.
+*   `update:me` (To the originating participant only) → `UpdateMePayload`. Confirms a `type` event.
+*   `update:all` (Room broadcast) → `UpdateAllPayload`. Throttled broadcast of all participant states.
+*   `update:data` (Room broadcast) → `UpdateDataPayload`. Sent when core tournament data changes (e.g., it starts or ends).
 
-### 4.2. Proactive Updates (partial)
+### 4.3. Broadcast Notifications
 
-- `update:me` (to the participant only) → `UpdateMePayload`
-- `update:all` (room broadcast) → `UpdateAllPayload`
-- `update:data` (room broadcast) → `UpdateDataPayload`
-
-### 4.3. Broadcast Notifications (full)
-
-- `participant:joined` → `ParticipantJoinedPayload`
-- `participant:left` → `ParticipantLeftPayload`
+*   `participant:joined` (Room broadcast) → `ParticipantJoinedPayload`.
+*   `participant:left` (Room broadcast) → `ParticipantLeftPayload`.
 
 ---
 
 ## 5. Payload Type Definitions (TypeScript)
 
-These reflect the JSON shapes produced by the Rust serializers (`serde` with `camelCase`).
+These definitions reflect the JSON shapes produced by the Rust serializers.
 
-### 5.1. Core types
+### 5.1. Core Types
 
 ```ts
-export type UserSchema = {
-  id: string;
-  username: string;
-  email: string;
-};
-
 export type TournamentRoomUserProfile = {
   username: string;
 };
@@ -185,6 +137,7 @@ export type TournamentRoomUserProfile = {
 export type TournamentRoomMember = {
   id: string;
   user: TournamentRoomUserProfile | null;
+  participant: boolean;
 };
 
 export type ParticipantData = {
@@ -212,25 +165,30 @@ export type TournamentData = {
 };
 ```
 
-### 5.2. Common payloads
+### 5.2. Event Payloads
 
 ```ts
 export type WsFailurePayload = { code: number; message: string };
 
-export type TypeEventPayload = { character: string };
-```
+// Client -> Server
+export type TypeEventPayload = {
+  character: string;
+  rid: number; // Request ID for optimistic updates
+};
 
-### 5.3. Specific payloads
-
-```ts
+// Server -> Client
 export type JoinSuccessPayload = {
   data: TournamentData;
   member: TournamentRoomMember;
   participants: ParticipantData[];
-  noauth: string; // may be empty when not applicable
+  noauth: string; // May be empty if authenticated
 };
 
-export type UpdateMePayload = { updates: Partial<ParticipantData> };
+// Server -> Client
+export type UpdateMePayload = {
+  updates: Partial<ParticipantData>;
+  rid: number; // Mirrors the rid from the triggering `type` event
+};
 
 export type PartialParticipantDataForUpdate = {
   memberId: string;
@@ -248,108 +206,35 @@ export type CheckSuccessPayload = { status: "upcoming" | "started" | "ended" };
 export type ParticipantJoinedPayload = { participant: ParticipantData };
 
 export type ParticipantLeftPayload = { memberId: string };
-
-export type LeaveSuccessPayload = { message: string };
 ```
 
 ---
 
 ## 6. Server-Side Implementation Notes
 
-- Namespace: `/`.
-- Handshake query params: `id` (required), `spectator` (bool), `anonymous` (bool).
-- Header: `x-noauth-unique` (optional, for unauthenticated continuity). CORS explicitly allows this header.
-- Rooming: Socket joins room `<tournamentId>` on successful association.
-- Lifecycle:
-  - Start: when at least one participant exists at scheduled time → set `startedAt`, `scheduledEnd`, generate `text`, emit `update:data`.
-  - End: after `scheduledEnd` OR when all participants have finished → set `endedAt`, emit `update:data`, evict manager after 10 minutes.
-- Debouncing/batching: `type` input is debounced and aggregated; partial updates (`update:me`, `update:all`) are emitted accordingly.
-
-Code references:
-
-- `api/src/action.rs` (handshake, member resolution, manager bootstrap)
-- `app/src/core/manager.rs` (events, payloads, lifecycle, debouncing)
-- `api/src/init.rs` (CORS, Socket.IO layer)
+*   **Namespace:** All events operate on the root `/` namespace.
+*   **Handshake Query Params:** `id` (required), `spectator` (boolean), `anonymous` (boolean).
+*   **Handshake Header:** `x-noauth-unique` is used to maintain identity for unauthenticated users.
+*   **Lifecycle:**
+    *   **Start:** A tournament officially starts at its `scheduled_for` time if at least one participant is present. This generates the typing `text`, sets `startedAt`, and broadcasts an `update:data` event.
+    *   **End:** A tournament ends when its scheduled duration expires or when all participants have either finished or timed out due to inactivity. This sets `endedAt` and broadcasts a final `update:data` event. The manager instance is evicted from memory after a grace period.
 
 ---
 
-## 7. Client-Side Notes
+## 7. Error Codes
 
-- Maintain a single socket instance per tournament.
-- Store `noauth` (when provided) and attach as `x-noauth-unique` for future HTTP/WebSocket calls if unauthenticated.
-- Participant-local state is driven by `update:me`; list/leaderboard by `update:all` and `participant:joined`/`participant:left`.
-- Tournament UI should react to `update:data` for starts/ends.
-
-Suggested state keys:
-
-- `participants: Record<string, ParticipantData>` keyed by `participant.member.id`.
-- `me: ParticipantData | null`, `myMemberId: string | null` from `join:success.member.id`.
-- `tournament: TournamentData | null`.
-- `isSpectator: boolean` inferred from join query and absence from `participants`.
-
----
-
-## 8. Spectator Mode
-
-Spectators share the room for broadcasts but do not have participant handlers.
-
-- Don’t send `type` or call `me` from spectators; they won’t be handled.
-- Spectators still receive: `update:all`, `update:data`, `participant:joined`, `participant:left` and can call `all`, `data`, `check`, `leave`.
-
----
-
-## 9. Error Codes
-
-Emitted by current server paths (non-exhaustive):
+A non-exhaustive list of error codes emitted by the server:
 
 ### 1xxx: Connection & Handshake
 
-- 1004 (join:failure): "Tournament no longer accepting participants."
-- 1005 (join:failure): "Tournament has already ended."
+*   `1004` (on `join:failure`): "Tournament no longer accepting participants."
+*   `1005` (on `join:failure`): "Tournament has already ended."
 
 ### 2xxx: Client Request & Validation
 
-- 2210 (type:failure): "Member ID not found." (typing without an active session)
+*   `2210` (on `type:failure`): "Member ID not found." (Sent if a user types without a valid session).
+*   `2211` (on `type:failure`): "Your session has ended." (Sent if a user types after finishing).
 
 ### 3xxx: Resource & State
 
-- 3101 (me:failure): "Your session was not found."
-
----
-
-## 10. HTTP API (brief)
-
-Base path: `/api/v1`.
-
-- Auth
-
-  - POST `/auth/login` → `{ user, tokens { access } }`
-  - POST `/auth/register` → same shape as login
-  - GET `/auth/me` → `{ user?: UserSchema }` inside `AuthSchema`
-  - POST `/auth/forgot-password`
-  - POST `/auth/reset-password`
-
-- Users
-
-  - POST `/users/` → create
-  - GET `/users/{id}` → fetch
-  - GET `/users/me`, PATCH `/users/me` → current user
-
-- Tournaments
-  - GET `/tournaments` → paginated list; query: `page`, `limit`, `privacy`, `status`, `search`
-    - Live fields merged when possible: `participating`, `participantCount`, `startedAt`, `endedAt`
-    - For unauthenticated clients, include `x-noauth-unique` header to derive participation
-  - POST `/tournaments` (auth required) → create
-  - GET `/tournaments/{id}` → details
-
----
-
-## 11. Future Improvements
-
-- Include cursor position in typing payloads.
-- Optional spectator roster and events.
-- User avatars in `TournamentRoomUserProfile`.
-- Capacity limits and enforcement.
-- Harden `TournamentRoomMember::get_id` to produce a non-reversible, fixed-format ID.
-
----
+*   `3101` (on `me:failure`): "Your session was not found."

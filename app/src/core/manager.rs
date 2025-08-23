@@ -599,7 +599,7 @@ impl TournamentManager {
 
         let update_me_payload = UpdateMePayload {
             updates: changes.clone(),
-            rid
+            rid,
         };
 
         if let Err(e) = socket.emit("update:me", &update_me_payload) {
