@@ -18,8 +18,6 @@ use models::params::tournament::{CreateTournamentParams, UpdateTournamentParams}
 
 use crate::state::AppState;
 
-const TOURNAMENT_ID_LENGTH: usize = 24;
-
 pub async fn parse_tournament(
     tournament: tournaments::Model,
     app_state: &AppState,
@@ -74,7 +72,8 @@ pub async fn create_tournament(
     params: CreateTournamentParams,
     user: &UserSchema,
 ) -> Result<tournaments::Model, DbErr> {
-    let id = nanoid::nanoid!(TOURNAMENT_ID_LENGTH, &super::ID_ALPHABET);
+    let id_len = super::TOURNAMENT_ID_LENGTH;
+    let id = nanoid::nanoid!(id_len, &super::ID_ALPHABET);
 
     let scheduled_for_earliest = Utc::now() + Duration::from_secs(30);
 

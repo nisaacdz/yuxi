@@ -18,8 +18,6 @@ use crate::state::AppState;
 
 const OTP_DURATION: TimeDelta = TimeDelta::minutes(10);
 
-const USER_ID_LENGTH: usize = 12;
-
 const USERNAME_SUFFIX_LENGTH: usize = 6;
 
 pub async fn create_user(
@@ -37,7 +35,8 @@ pub async fn create_user(
         return Err(DbErr::Custom("User already exists".to_string()));
     }
 
-    let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
+    let id_len = super::USER_ID_LENGTH;
+    let id = nanoid::nanoid!(id_len, &super::ID_ALPHABET);
 
     let username = format!(
         "{}{}",
@@ -250,7 +249,8 @@ pub async fn email_auth(state: &AppState, params: EmailAuthParams) -> Result<use
     } else {
         // --- CASE 2: NEW USER ---
         // No user was found, so we create one within the same transaction.
-        let id = nanoid::nanoid!(USER_ID_LENGTH, &super::ID_ALPHABET);
+        let id_len = super::USER_ID_LENGTH;
+        let id = nanoid::nanoid!(id_len, &super::ID_ALPHABET);
         let username = format!(
             "{}{}",
             faker::internet::en::Username().fake::<String>(),
