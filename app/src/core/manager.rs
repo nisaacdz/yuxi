@@ -31,8 +31,8 @@ use crate::{
 const JOIN_DEADLINE: Duration = Duration::from_secs(15);
 const INACTIVITY_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
-const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
-const MAX_PROCESS_WAIT: Duration = Duration::from_millis(2000);
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(250);
+const MAX_PROCESS_WAIT: Duration = Duration::from_millis(800);
 const MAX_PROCESS_STACK_SIZE: usize = 5;
 
 const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(1000);
