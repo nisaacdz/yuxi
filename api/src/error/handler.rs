@@ -6,7 +6,7 @@ use axum::{
 };
 use sea_orm::DbErr;
 
-use app::error::UserError;
+use app::error::CustomError;
 
 use super::{ApiError, HTTPError};
 use crate::models::ApiErrorResponse;
@@ -18,7 +18,7 @@ impl IntoResponse for ApiError {
         let (status, message) = if let Some(err) = err.downcast_ref::<DbErr>() {
             tracing::error!(%err, "error from db:");
             (err.to_status_code(), "DB error".to_string()) // hide the detail
-        } else if let Some(err) = err.downcast_ref::<UserError>() {
+        } else if let Some(err) = err.downcast_ref::<CustomError>() {
             (err.to_status_code(), err.to_string())
         } else if let Some(err) = err.downcast_ref::<JsonRejection>() {
             tracing::error!(%err, "error from extractor:");

@@ -1,7 +1,7 @@
 use axum::{extract::rejection::JsonRejection, http::StatusCode};
 use sea_orm::DbErr;
 
-use app::error::UserError;
+use app::error::CustomError;
 
 use super::traits::HTTPError;
 
@@ -23,10 +23,8 @@ impl HTTPError for DbErr {
     }
 }
 
-impl HTTPError for UserError {
+impl HTTPError for CustomError {
     fn to_status_code(&self) -> StatusCode {
-        match self {
-            UserError::NotFound => StatusCode::NOT_FOUND,
-        }
+        self.code
     }
 }

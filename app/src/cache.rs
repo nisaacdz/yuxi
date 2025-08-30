@@ -7,6 +7,7 @@ use models::schemas::typing::TypingSessionSchema;
 
 use crate::core::TournamentManager;
 
+// Actually, it might be too memory consuming -- from sparse/unrelated keys
 // mod trie {
 //     use super::*;
 //     //use super::super::persistence::ID_ALPHABET; 0-9, A-Z, a-z

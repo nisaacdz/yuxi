@@ -25,3 +25,4 @@ serde_json = { workspace = true }
 nanoid = { workspace = true }
 dotenvy = "0.15.7"
 openidconnect = { workspace = true, features = ["reqwest"] }
+axum = { workspace = true }

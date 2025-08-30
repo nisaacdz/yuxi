@@ -12,7 +12,9 @@ pub use init::{setup_config, setup_db, setup_router};
 use serde::Serialize;
 use uuid::Uuid;
 
-/// A generic structure for API responses sent over WebSockets.
+/// A generic structure for API responses.
+///
+/// This type is sent to the client in the http response body
 #[derive(Serialize, Debug)]
 pub struct ApiResponse<T: Serialize> {
     success: bool,
@@ -60,6 +62,7 @@ impl<T: Serialize> ApiResponse<T> {
     }
 }
 
+// TODO: Implement more secure encode and decode methods
 pub fn decode_noauth(value: &[u8]) -> Option<String> {
     Uuid::try_parse_ascii(value).map(|id| id.to_string()).ok()
 }

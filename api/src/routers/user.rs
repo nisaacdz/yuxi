@@ -10,7 +10,7 @@ use sea_orm::TryIntoModel;
 
 use app::persistence::users::{create_user, get_user};
 use app::state::AppState;
-use app::{error::UserError, persistence::users::update_user};
+use app::{error::CustomError, persistence::users::update_user};
 use models::schemas::user::UserSchema;
 use models::{
     params::user::{CreateUserParams, UpdateUserParams},
@@ -39,7 +39,7 @@ async fn users_id_get(
     let user = get_user(&state, &id).await.map_err(ApiError::from)?;
 
     user.map(|user| Json(UserSchema::from(user)))
-        .ok_or_else(|| UserError::NotFound.into())
+        .ok_or_else(|| CustomError::new(StatusCode::NOT_FOUND, "user not found".into()).into())
 }
 
 #[axum::debug_handler]
