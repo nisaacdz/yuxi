@@ -1,7 +1,7 @@
-use yuxi::*;
+use yuxi::run;
 
-#[cfg(not(feature = "shuttle"))]
-fn main() {
+#[tokio::main]
+async fn main() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     tracing_subscriber::registry()
@@ -12,12 +12,6 @@ fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting with tokio");
-    tokio::run();
-}
-
-#[cfg(feature = "shuttle")]
-#[shuttle_runtime::main]
-async fn main(#[shuttle_shared_db::Postgres] db_url: String) -> shuttle_axum::ShuttleAxum {
-    shuttle::run(&db_url).await
+    tracing::info!("Starting");
+    run().await;
 }
