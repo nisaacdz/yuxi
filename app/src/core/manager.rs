@@ -8,14 +8,14 @@ use models::{
         user::TournamentRoomMember,
     },
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use socketioxide::extract::{Data, SocketRef};
 use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     cache::Cache,
@@ -172,13 +172,14 @@ struct UpdateDataPayload {
     updates: PartialTournamentData,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct TypeEventPayload {
     character: char,
     rid: i32,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 struct ProgressEventPayload {
     correct_position: usize,
     current_position: usize,
