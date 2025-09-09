@@ -309,7 +309,9 @@ impl TournamentManager {
                             .tournament_registry
                             .get(&inner.tournament_id)
                         {
-                            manager.shutdown().await;
+                            tokio::spawn(async move {
+                                manager.shutdown().await;
+                            });
                         } else {
                             error!("Tournament manager not found for {}", inner.tournament_id);
                         }
@@ -816,24 +818,23 @@ impl TournamentManager {
 
         socket.on("leave", {
             let manager_clone_leave = self.clone();
-            let member_leave = member.clone();
+            let member_id = member.id.clone();
             move |s: SocketRef| {
                 let mc_leave = manager_clone_leave.clone();
-                let cid_leave = member_leave.id.clone();
                 let socket_leave = s.clone();
                 async move {
                     info!(
                         "Member {} is attempting to leave tournament {}",
-                        cid_leave, mc_leave.inner.tournament_id
+                        member_id, mc_leave.inner.tournament_id
                     );
                     if !spectator {
                         mc_leave
-                            .handle_participant_leave(&cid_leave, &socket_leave)
+                            .handle_participant_leave(&member_id, &socket_leave)
                             .await
                             .map_err(|e| {
                                 warn!(
                                     "Error during leave handling for member {}: {}",
-                                    cid_leave, e
+                                    member_id, e
                                 );
                             })
                             .ok();
@@ -842,7 +843,7 @@ impl TournamentManager {
                         message: "Left tournament successfully".to_string(),
                     };
                     if s.emit("leave:success", &leave_success_payload).is_err() {
-                        warn!("Failed to send leave:success to {}: {}", cid_leave, s.id);
+                        warn!("Failed to send leave:success to {}: {}", member_id, s.id);
                     }
                 }
             }
