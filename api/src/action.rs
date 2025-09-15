@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use app::{
     core::{TournamentManager, WsFailurePayload},
@@ -41,7 +41,7 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 .and_then(|val_str| val_str.parse::<bool>().ok())
                 .unwrap_or(false);
 
-            let mut noauth = String::new();
+            let mut noauth = String::from("not-set");
 
             let tournament_room_member = match &auth_state.user {
                 Some(user) => TournamentRoomMember::from_user(user, anonymous, !spectator),
@@ -69,13 +69,12 @@ pub fn register_tournament_namespace(app_state: AppState) {
                 },
             };
 
-            // socket. insert into extensions
-            socket.extensions.insert(tournament_room_member);
+            socket.extensions.insert(Arc::new(tournament_room_member));
 
             let app_state = app_state.clone();
             let socket = socket.clone();
 
-            let member = match socket.extensions.get::<TournamentRoomMember>() {
+            let member = match socket.extensions.get::<Arc<TournamentRoomMember>>() {
                 Some(member) => member.clone(),
                 None => {
                     error!(

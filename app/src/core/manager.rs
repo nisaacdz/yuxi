@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     cache::Cache,
@@ -389,7 +389,7 @@ impl TournamentManager {
                 .within(self.inner.tournament_id.to_string())
                 .sockets()
             {
-                self.register_type_listeners(socket);
+                self.register_type_listeners(socket, false);
             }
 
             self.inner.broadcast_update_data(true).await;
@@ -433,7 +433,10 @@ impl TournamentManager {
         spectator: bool,
         noauth: String,
     ) -> Result<()> {
-        let member_schema = socket.extensions.get::<TournamentRoomMember>().unwrap();
+        let member_schema = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
 
         let now = Utc::now();
 
@@ -498,7 +501,7 @@ impl TournamentManager {
                     .participants
                     .get_or_insert(&member_schema.id, || {
                         TypingSessionSchema::new(
-                            member_schema.clone(),
+                            (*member_schema).clone(),
                             self.inner.tournament_id.to_string(),
                         )
                     });
@@ -538,7 +541,7 @@ impl TournamentManager {
 
         let join_success_payload = JoinSuccessPayload {
             data: current_tournament_data,
-            member: member_schema.clone(),
+            member: (*member_schema).clone(),
             participants: all_participants_api_data,
             noauth,
         };
@@ -560,8 +563,118 @@ impl TournamentManager {
         Ok(())
     }
 
-    pub async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>, rid: i32) {
-        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
+    async fn handle_progress(self: Self, socket: SocketRef, progress: ProgressEventPayload) {
+        let member = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
+
+        let text_len = self.inner.typing_text.read().unwrap().len();
+
+        let ProgressEventPayload {
+            correct_position,
+            current_position,
+            total_keystrokes,
+            rid,
+        } = progress;
+
+        if current_position > text_len
+            || correct_position > text_len
+            || correct_position > current_position
+        {
+            warn!(member_id = %member.id, "Received invalid progress data. Ignoring.");
+            let failure_payload = WsFailurePayload::new(2212, "Invalid progress data.");
+            socket.emit("progress:failure", &failure_payload).ok();
+            return;
+        }
+
+        // 2. Perform the atomic update using the cache's callback
+        let now = Utc::now();
+        let update_result = self.inner.participants.update_data(
+            &member.id,
+            // This closure contains all the mutation logic.
+            // It receives `&mut TypingSessionSchema`.
+            |session| {
+                if session.ended_at.is_some() {
+                    return Err(WsFailurePayload::new(2211, "Your session has ended."));
+                }
+
+                if session.started_at.is_none() {
+                    session.started_at = Some(now);
+                }
+
+                session.current_position = current_position;
+                session.correct_position = correct_position;
+                session.total_keystrokes = total_keystrokes;
+
+                if let Some(started_at) = session.started_at {
+                    let duration = now.signed_duration_since(started_at);
+                    let minutes_elapsed =
+                        (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
+
+                    session.current_speed =
+                        (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
+                    session.current_accuracy = if session.total_keystrokes > 0 {
+                        ((session.correct_position as f32 / session.total_keystrokes as f32)
+                            * 100.0)
+                            .round()
+                            .clamp(0.0, 100.0)
+                    } else {
+                        100.0
+                    };
+                }
+
+                if session.correct_position == text_len && session.ended_at.is_none() {
+                    session.ended_at = Some(now);
+                    info!(
+                        member_id = %session.member.id,
+                        tournament_id = %session.tournament_id,
+                        "User finished typing challenge via progress update"
+                    );
+                }
+
+                Ok(PartialParticipantData {
+                    current_position: Some(session.current_position),
+                    correct_position: Some(session.correct_position),
+                    total_keystrokes: Some(session.total_keystrokes),
+                    current_speed: Some(session.current_speed),
+                    current_accuracy: Some(session.current_accuracy),
+                    started_at: session.started_at,
+                    ended_at: session.ended_at,
+                })
+            },
+        );
+
+        match update_result {
+            Some(Ok(changes)) => {
+                let update_me_payload = UpdateMePayload {
+                    updates: changes,
+                    rid,
+                };
+                if let Err(e) = socket.emit("update:me", &update_me_payload) {
+                    warn!("Failed to send update:me to {}: {}", member.id, e);
+                }
+                self.update_all_broadcaster.trigger();
+            }
+
+            Some(Err(failure_payload)) => {
+                warn!(member_id = %member.id, "Progress update failed: {}", failure_payload.message);
+                socket.emit("progress:failure", &failure_payload).ok();
+            }
+
+            None => {
+                warn!(member_id = %member.id, "Progress event received, but no active session found.");
+                let failure_payload = WsFailurePayload::new(2210, "Member ID not found.");
+                socket.emit("progress:failure", &failure_payload).ok();
+            }
+        }
+    }
+
+    async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>, rid: i32) {
+        let member = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
 
         if typed_chars.is_empty() {
             warn!(member_id = %member.id, "Received empty typing event. Ignoring.");
@@ -591,7 +704,6 @@ impl TournamentManager {
 
         let challenge_text_bytes = typing_text.as_bytes();
 
-        // --- Process Input and Update State ---
         let now = Utc::now();
         let updated_session =
             process_typing_input(typing_session, typed_chars, challenge_text_bytes, now);
@@ -620,11 +732,13 @@ impl TournamentManager {
         self.update_all_broadcaster.trigger();
     }
 
-    fn register_type_listeners(self: &Self, socket: SocketRef) {
-        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
+    fn register_type_listeners(self: &Self, socket: SocketRef, secure: bool) {
+        let member = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
 
         if member.participant {
-            // --- This entire "type" event block is unchanged ---
             let debounce_duration = DEBOUNCE_DURATION;
             let max_process_wait = MAX_PROCESS_WAIT;
             let max_process_stack_size = MAX_PROCESS_STACK_SIZE;
@@ -645,138 +759,50 @@ impl TournamentManager {
                 ))
             };
 
-            let frequency_monitor = Arc::new(FrequencyMonitor::new(
-                debounce_duration,
-                max_process_wait,
-                max_process_stack_size,
-            ));
+            if secure {
+                let frequency_monitor = Arc::new(FrequencyMonitor::new(
+                    debounce_duration,
+                    max_process_wait,
+                    max_process_stack_size,
+                ));
 
-            socket.on("type", {
-            let frequency_monitor = frequency_monitor.clone();
-            let timeout_monitor = timeout_monitor.clone();
-            let manager_clone = self.clone();
-            async move |socket: SocketRef, Data::<TypeEventPayload>(TypeEventPayload { character, rid })| {
-                let processor = async move {
-                    frequency_monitor
-                        .call(character, rid, move |chars: Vec<char>, rid: i32| {
-                            Self::handle_typing(manager_clone, socket, chars, rid)
-                        })
-                        .await;
-                };
+                socket.on("type", {
+                    let frequency_monitor = frequency_monitor.clone();
+                    let timeout_monitor = timeout_monitor.clone();
+                    let manager_clone = self.clone();
+                    async move |socket: SocketRef, Data::<TypeEventPayload>(TypeEventPayload { character, rid })| {
+                        let processor = async move {
+                            frequency_monitor
+                                .call(character, rid, move |chars: Vec<char>, rid: i32| {
+                                    Self::handle_typing(manager_clone, socket, chars, rid)
+                                })
+                                .await;
+                        };
 
-                timeout_monitor.call(processor).await;
+                        timeout_monitor.call(processor).await;
+                    }
+                });
+            } else {
+                // No frequency monitor here
+                socket.on("progress", {
+                    let manager_clone = self.clone();
+                    async move |socket: SocketRef, Data::<ProgressEventPayload>(progress)| {
+                        let processor = async move {
+                            Self::handle_progress(manager_clone, socket, progress).await;
+                        };
+
+                        timeout_monitor.call(processor).await;
+                    }
+                });
             }
-        });
-
-            // --- Refactored "progress" event handler ---
-            socket.on("progress", {
-            let manager_clone = self.clone();
-            async move |socket: SocketRef, Data::<ProgressEventPayload>(progress)| {
-                // 1. Perform initial, pre-state validation
-
-                let text_len = manager_clone.inner.typing_text.read().unwrap().len();
-
-                let ProgressEventPayload {
-                    correct_position,
-                    current_position,
-                    total_keystrokes,
-                    rid,
-                } = progress;
-
-                if current_position > text_len
-                    || correct_position > text_len
-                    || correct_position > current_position
-                {
-                    warn!(member_id = %member.id, "Received invalid progress data. Ignoring.");
-                    let failure_payload = WsFailurePayload::new(2212, "Invalid progress data.");
-                    socket.emit("progress:failure", &failure_payload).ok();
-                    return;
-                }
-
-                // 2. Perform the atomic update using the cache's callback
-                let now = Utc::now();
-                let update_result = manager_clone.inner.participants.update_data(
-                    &member.id,
-                    // This closure contains all the mutation logic.
-                    // It receives `&mut TypingSessionSchema`.
-                    |session| {
-                        if session.ended_at.is_some() {
-                            return Err(WsFailurePayload::new(2211, "Your session has ended."));
-                        }
-
-                        if session.started_at.is_none() {
-                            session.started_at = Some(now);
-                        }
-
-                        session.current_position = current_position;
-                        session.correct_position = correct_position;
-                        session.total_keystrokes = total_keystrokes;
-
-                        if let Some(started_at) = session.started_at {
-                            let duration = now.signed_duration_since(started_at);
-                            let minutes_elapsed = (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
-
-                            session.current_speed = (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
-                            session.current_accuracy = if session.total_keystrokes > 0 {
-                                ((session.correct_position as f32 / session.total_keystrokes as f32) * 100.0)
-                                    .round()
-                                    .clamp(0.0, 100.0)
-                            } else {
-                                100.0
-                            };
-                        }
-
-                        if session.correct_position == text_len && session.ended_at.is_none() {
-                            session.ended_at = Some(now);
-                            info!(
-                                member_id = %session.member.id,
-                                tournament_id = %session.tournament_id,
-                                "User finished typing challenge via progress update"
-                            );
-                        }
-
-                        // Return the data needed for the success response
-                        Ok(PartialParticipantData {
-                            current_position: Some(session.current_position),
-                            correct_position: Some(session.correct_position),
-                            total_keystrokes: Some(session.total_keystrokes),
-                            current_speed: Some(session.current_speed),
-                            current_accuracy: Some(session.current_accuracy),
-                            started_at: session.started_at,
-                            ended_at: session.ended_at,
-                        })
-                    },
-                );
-
-                // 3. Handle the result of the atomic operation
-                match update_result {
-                    // Success case: The session was found and the closure returned Ok(changes)
-                    Some(Ok(changes)) => {
-                        let update_me_payload = UpdateMePayload { updates: changes, rid };
-                        if let Err(e) = socket.emit("update:me", &update_me_payload) {
-                            warn!("Failed to send update:me to {}: {}", member.id, e);
-                        }
-                        manager_clone.update_all_broadcaster.trigger();
-                    }
-                    // Failure case: The session was found but the closure returned an error
-                    Some(Err(failure_payload)) => {
-                        warn!(member_id = %member.id, "Progress update failed: {}", failure_payload.message);
-                        socket.emit("progress:failure", &failure_payload).ok();
-                    }
-                    // Failure case: The session was not found in the cache at all
-                    None => {
-                        warn!(member_id = %member.id, "Progress event received, but no active session found.");
-                        let failure_payload = WsFailurePayload::new(2210, "Member ID not found.");
-                        socket.emit("progress:failure", &failure_payload).ok();
-                    }
-                }
-            }
-        });
         }
     }
 
     fn register_base_listeners(self: Self, socket: SocketRef, spectator: bool) {
-        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
+        let member = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
 
         socket.on("check", {
             let manager_clone_check = self.clone(); // Clone manager for the async block
@@ -854,7 +880,7 @@ impl TournamentManager {
             let manager_clone_disconnect = self.clone();
             move |s: SocketRef| {
                 let mc_disconnect = manager_clone_disconnect.clone();
-                let member = s.extensions.get::<TournamentRoomMember>().unwrap();
+                let member = s.extensions.get::<Arc<TournamentRoomMember>>().unwrap();
                 async move {
                     info!(
                         "Member {} disconnected from tournament {}",
@@ -869,8 +895,8 @@ impl TournamentManager {
                 let manager_clone_me = self.clone();
                 move |s: SocketRef| {
                     let mc_me = manager_clone_me.clone();
-                    let member_me = s.extensions.get::<TournamentRoomMember>().unwrap();
-                    let cid_me = member_me.id;
+                    let member_me = s.extensions.get::<Arc<TournamentRoomMember>>().unwrap();
+                    let cid_me = (*member_me).id.clone();
                     let socket_me = s.clone();
                     async move {
                         if let Some(session_data) = mc_me.inner.participants.get_data(&cid_me) {
@@ -1017,7 +1043,10 @@ impl TournamentManager {
     }
 
     pub async fn handle_timeout(self: Self, socket: SocketRef) {
-        let member = socket.extensions.get::<TournamentRoomMember>().unwrap();
+        let member = socket
+            .extensions
+            .get::<Arc<TournamentRoomMember>>()
+            .unwrap();
         self.inner.participants.update_data(&member.id, |m| {
             m.ended_at = Some(Utc::now());
         });
