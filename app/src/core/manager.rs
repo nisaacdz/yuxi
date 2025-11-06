@@ -447,10 +447,12 @@ impl TournamentManager {
             };
 
             let scheduled_for = self.inner.tournament_meta.scheduled_for;
+            let join_deadline = TimeDelta::from_std(JOIN_DEADLINE)
+                .unwrap_or_else(|_| TimeDelta::seconds(15));
 
             if ended_at.is_some()
                 || started_at.is_some()
-                || (scheduled_for - now < TimeDelta::from_std(JOIN_DEADLINE).unwrap())
+                || (scheduled_for - now < join_deadline)
             {
                 error!(member_id = %member_schema.id, "Tournament no longer accepting participants.");
                 let failure_payload =
