@@ -1072,7 +1072,7 @@ impl TournamentManager {
         }
     }
 
-    pub async fn shutdown(self: &Self) {
+    pub async fn shutdown(&self) {
         let mut session_data = self.inner.tournament_session_state.lock().await;
 
         // 1. Idempotency Check: If already ending/ended, do nothing.
