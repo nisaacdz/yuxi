@@ -19,17 +19,10 @@ pub async fn extension(
     let token = headers
         .get("Authorization")
         .and_then(|header| header.to_str().ok())
-        .and_then(|header| {
-            if header.starts_with("Bearer ") {
-                Some(&header[7..])
-            } else {
-                None
-            }
-        });
+        .and_then(|header| header.strip_prefix("Bearer "));
 
     let auth_user = token
-        .map(|token| decode_data::<UserSchema>(&state.config, token).ok())
-        .flatten();
+        .and_then(|token| decode_data::<UserSchema>(&state.config, token).ok());
 
     req.extensions_mut().insert(AuthSchema { user: auth_user });
 

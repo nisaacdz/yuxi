@@ -34,7 +34,7 @@ pub async fn login_post(
 ) -> Result<impl IntoResponse, ApiError> {
     let user = login_user(&state, params).await.map_err(ApiError::from)?;
 
-    let access = encode_data(&state.config, &UserSchema::from(user.clone()))?;
+    let access = encode_data(&state.config, UserSchema::from(user.clone()))?;
 
     let user_schema = UserSchema::from(user);
     let tokens = TokensSchema { access };
