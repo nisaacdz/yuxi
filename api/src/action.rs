@@ -49,8 +49,7 @@ pub fn register_tournament_namespace(app_state: AppState) {
                     .req_parts()
                     .headers
                     .get("x-noauth-unique")
-                    .map(|value| decode_noauth(value.as_ref()))
-                    .flatten()
+                    .and_then(|value| decode_noauth(value.as_ref()))
                 {
                     Some(id) => TournamentRoomMember {
                         id,

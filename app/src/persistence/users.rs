@@ -24,7 +24,8 @@ pub async fn create_user(
     state: &AppState,
     params: CreateUserParams,
 ) -> Result<users::Model, DbErr> {
-    let pass_hash = bcrypt::hash(params.password, 4).unwrap();
+    let pass_hash = bcrypt::hash(params.password, 12)
+        .map_err(|_| DbErr::Custom("Authentication setup failed".to_string()))?;
 
     let existing_user = users::Entity::find()
         .filter(users::Column::Email.eq(&params.email))
@@ -104,7 +105,8 @@ pub async fn login_user(
     };
 
     if let Some(passhash) = &user.passhash {
-        if !bcrypt::verify(password, &passhash).unwrap() {
+        if !bcrypt::verify(password, &passhash)
+            .map_err(|_| DbErr::Custom("Authentication failed".to_string()))? {
             return Err(DbErr::Custom("Password incorrect".to_string()));
         }
     } else {

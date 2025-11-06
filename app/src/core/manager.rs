@@ -48,7 +48,7 @@ pub struct WsFailurePayload {
 impl WsFailurePayload {
     pub fn new(code: i32, message: &str) -> Self {
         Self {
-            code: code,
+            code,
             message: message.to_string(),
         }
     }
@@ -210,7 +210,7 @@ impl TournamentManagerInner {
                     scheduled_for: None,
                     description: None,
                     started_at: if start { started_at } else { None },
-                    ended_at: ended_at,
+                    ended_at,
                     text: if start {
                         Some(self.typing_text.read().unwrap().to_string())
                     } else {

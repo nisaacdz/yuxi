@@ -15,7 +15,12 @@ async fn root_get(state: State<AppState>) -> Result<String, ApiError> {
         .await
         .map_err(ApiError::from)?;
 
-    result.unwrap().try_get_by(0).map_err(|e| e.into())
+    result
+        .ok_or_else(|| ApiError::from(sea_orm::DbErr::RecordNotFound(
+            "Health check query returned no results".to_string()
+        )))?
+        .try_get_by(0)
+        .map_err(|e| e.into())
 }
 
 pub fn create_root_router() -> Router<AppState> {
