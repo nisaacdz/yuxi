@@ -28,7 +28,7 @@ async fn users_post(
 ) -> Result<impl IntoResponse, ApiError> {
     let user = create_user(&state, params).await.map_err(ApiError::from)?;
 
-    let user = user.try_into_model().unwrap();
+    let user = user.try_into_model().map_err(ApiError::from)?;
     Ok((StatusCode::CREATED, Json(UserSchema::from(user))))
 }
 

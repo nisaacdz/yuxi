@@ -50,7 +50,7 @@ async fn tournaments_get(
     request: Request,
 ) -> Result<impl IntoResponse, ApiError> {
     let noauth = request.headers().get("x-noauth-unique");
-    let member_id = noauth.map(|value| decode_noauth(value.as_ref())).flatten();
+    let member_id = noauth.and_then(|value| decode_noauth(value.as_ref()));
     let member_id = member_id.as_ref().map(|v| v.as_ref());
 
     let result = search_tournaments(
