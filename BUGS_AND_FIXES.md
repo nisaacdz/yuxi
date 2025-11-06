@@ -28,10 +28,12 @@ let pass_hash = bcrypt::hash(params.password, 4).unwrap();
 **Fixed Code:**
 ```rust
 let pass_hash = bcrypt::hash(params.password, 12)
-    .map_err(|e| DbErr::Custom(format!("Failed to hash password: {}", e)))?;
+    .map_err(|_| DbErr::Custom("Authentication setup failed".to_string()))?;
 ```
 
 **Impact:** HIGH - Security vulnerability that could allow attackers to crack passwords more easily
+
+**Note:** Error message is intentionally generic to avoid exposing sensitive implementation details in logs.
 
 ---
 
@@ -53,12 +55,14 @@ if !bcrypt::verify(password, &passhash).unwrap() {
 **Fixed Code:**
 ```rust
 if !bcrypt::verify(password, &passhash)
-    .map_err(|e| DbErr::Custom(format!("Failed to verify password: {}", e)))? {
+    .map_err(|_| DbErr::Custom("Authentication failed".to_string()))? {
     return Err(DbErr::Custom("Password incorrect".to_string()));
 }
 ```
 
 **Impact:** MEDIUM - Could cause server crashes during login attempts
+
+**Note:** Error message is intentionally generic to avoid exposing sensitive implementation details in logs.
 
 ---
 
@@ -102,12 +106,16 @@ result.unwrap().try_get_by(0).map_err(|e| e.into())
 **Fixed Code:**
 ```rust
 result
-    .ok_or_else(|| ApiError::from(sea_orm::DbErr::RecordNotFound("Query result not found".to_string())))?
+    .ok_or_else(|| ApiError::from(sea_orm::DbErr::RecordNotFound(
+        "Health check query returned no results".to_string()
+    )))?
     .try_get_by(0)
     .map_err(|e| e.into())
 ```
 
 **Impact:** LOW - Health check endpoint could crash, but doesn't affect core functionality
+
+**Note:** Error message now provides clearer context about the health check failure.
 
 ---
 

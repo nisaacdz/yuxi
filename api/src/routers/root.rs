@@ -16,7 +16,9 @@ async fn root_get(state: State<AppState>) -> Result<String, ApiError> {
         .map_err(ApiError::from)?;
 
     result
-        .ok_or_else(|| ApiError::from(sea_orm::DbErr::RecordNotFound("Query result not found".to_string())))?
+        .ok_or_else(|| ApiError::from(sea_orm::DbErr::RecordNotFound(
+            "Health check query returned no results".to_string()
+        )))?
         .try_get_by(0)
         .map_err(|e| e.into())
 }
