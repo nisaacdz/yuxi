@@ -369,7 +369,7 @@ impl TournamentManager {
         )
     }
 
-    async fn execute_tournament_start_logic(self: Self) {
+    async fn execute_tournament_start_logic(self) {
         let participant_count = self.inner.participants.count();
 
         if participant_count > 0 {
@@ -428,7 +428,7 @@ impl TournamentManager {
     }
 
     pub async fn connect(
-        self: Self,
+        self,
         socket: SocketRef,
         spectator: bool,
         noauth: String,
@@ -447,10 +447,12 @@ impl TournamentManager {
             };
 
             let scheduled_for = self.inner.tournament_meta.scheduled_for;
+            let join_deadline = TimeDelta::from_std(JOIN_DEADLINE)
+                .unwrap_or_else(|_| TimeDelta::seconds(15));
 
             if ended_at.is_some()
                 || started_at.is_some()
-                || (scheduled_for - now < TimeDelta::from_std(JOIN_DEADLINE).unwrap())
+                || (scheduled_for - now < join_deadline)
             {
                 error!(member_id = %member_schema.id, "Tournament no longer accepting participants.");
                 let failure_payload =
@@ -563,7 +565,7 @@ impl TournamentManager {
         Ok(())
     }
 
-    async fn handle_progress(self: Self, socket: SocketRef, progress: ProgressEventPayload) {
+    async fn handle_progress(self, socket: SocketRef, progress: ProgressEventPayload) {
         let member = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -670,7 +672,7 @@ impl TournamentManager {
         }
     }
 
-    async fn handle_typing(self: Self, socket: SocketRef, typed_chars: Vec<char>, rid: i32) {
+    async fn handle_typing(self, socket: SocketRef, typed_chars: Vec<char>, rid: i32) {
         let member = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -721,7 +723,7 @@ impl TournamentManager {
         };
 
         let update_me_payload = UpdateMePayload {
-            updates: changes.clone(),
+            updates: changes,
             rid,
         };
 
@@ -732,7 +734,7 @@ impl TournamentManager {
         self.update_all_broadcaster.trigger();
     }
 
-    fn register_type_listeners(self: &Self, socket: SocketRef, secure: bool) {
+    fn register_type_listeners(&self, socket: SocketRef, secure: bool) {
         let member = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -798,7 +800,7 @@ impl TournamentManager {
         }
     }
 
-    fn register_base_listeners(self: Self, socket: SocketRef, spectator: bool) {
+    fn register_base_listeners(self, socket: SocketRef, spectator: bool) {
         let member = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -981,7 +983,7 @@ impl TournamentManager {
     }
 
     async fn handle_participant_leave(
-        self: &Self,
+        &self,
         member_id_str: &str,
         socket: &SocketRef,
     ) -> Result<()> {
@@ -1042,7 +1044,7 @@ impl TournamentManager {
         }
     }
 
-    pub async fn handle_timeout(self: Self, socket: SocketRef) {
+    pub async fn handle_timeout(self, socket: SocketRef) {
         let member = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -1070,7 +1072,7 @@ impl TournamentManager {
         }
     }
 
-    pub async fn shutdown(self: &Self) {
+    pub async fn shutdown(&self) {
         let mut session_data = self.inner.tournament_session_state.lock().await;
 
         // 1. Idempotency Check: If already ending/ended, do nothing.
