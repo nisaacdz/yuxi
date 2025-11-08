@@ -22,6 +22,8 @@ tokio = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
 openidconnect = { workspace = true }
+utoipa = { workspace = true, features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 
 # db
 sea-orm = { workspace = true }

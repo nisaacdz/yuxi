@@ -27,6 +27,16 @@ use crate::ApiResponse;
 use crate::error::ApiError;
 use crate::extractor::Json;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "auth",
+    request_body = LoginUserParams,
+    responses(
+        (status = 200, description = "Login successful", body = ApiResponse<LoginSchema>),
+        (status = 401, description = "Invalid credentials"),
+    )
+)]
 #[axum::debug_handler]
 pub async fn login_post(
     State(state): State<AppState>,
@@ -48,6 +58,16 @@ pub async fn login_post(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "auth",
+    request_body = CreateUserParams,
+    responses(
+        (status = 200, description = "Registration successful", body = ApiResponse<LoginSchema>),
+        (status = 400, description = "Invalid input or user already exists"),
+    )
+)]
 #[axum::debug_handler]
 pub async fn register_post(
     State(state): State<AppState>,
@@ -67,6 +87,18 @@ pub async fn register_post(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "User data retrieved", body = ApiResponse<AuthSchema>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[axum::debug_handler]
 pub async fn me_get(
     Extension(auth_state): Extension<AuthSchema>,
@@ -75,6 +107,16 @@ pub async fn me_get(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/forgot-password",
+    tag = "auth",
+    request_body = ForgotPasswordBody,
+    responses(
+        (status = 200, description = "OTP sent to email"),
+        (status = 404, description = "User not found"),
+    )
+)]
 #[axum::debug_handler]
 pub async fn forgot_password_post(
     State(state): State<AppState>,
@@ -91,6 +133,16 @@ pub async fn forgot_password_post(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/reset-password",
+    tag = "auth",
+    request_body = ResetPasswordBody,
+    responses(
+        (status = 200, description = "Password reset successful"),
+        (status = 400, description = "Invalid OTP or request"),
+    )
+)]
 #[axum::debug_handler]
 pub async fn reset_password_post(
     State(state): State<AppState>,
@@ -110,6 +162,16 @@ fn empty_nonce_verifier(_: Option<&Nonce>) -> Result<(), String> {
     Ok(())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/google",
+    tag = "auth",
+    request_body = AuthCodeParams,
+    responses(
+        (status = 200, description = "Google authentication successful", body = ApiResponse<LoginSchema>),
+        (status = 400, description = "Invalid authorization code"),
+    )
+)]
 #[axum::debug_handler]
 pub async fn google_auth_post(
     State(state): State<AppState>,

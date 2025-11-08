@@ -1,15 +1,17 @@
 use sea_orm::prelude::DateTimeUtc;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::domains::typing_history;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TypingHistorySchema {
     pub id: i32,
     pub user_id: String,
     pub tournament_id: String,
     pub accuracy: i32,
     pub speed: i32,
+    #[schema(value_type = String, format = DateTime)]
     pub completed_at: DateTimeUtc,
 }
 
@@ -26,7 +28,7 @@ impl From<typing_history::Model> for TypingHistorySchema {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TypingHistoryListSchema {
     pub typing_history: Vec<TypingHistorySchema>,
 }

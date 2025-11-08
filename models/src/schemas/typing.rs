@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::schemas::user::TournamentRoomMember;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct TypingSessionSchema {
     pub member: TournamentRoomMember,
     pub tournament_id: String,
@@ -47,7 +48,7 @@ impl TypingSessionSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TournamentStatus {
     Upcoming,
@@ -55,7 +56,7 @@ pub enum TournamentStatus {
     Ended,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 pub struct TextOptions {
     uppercase: bool,
     lowercase: bool,

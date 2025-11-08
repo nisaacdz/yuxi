@@ -1,7 +1,8 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tournament_privacy")]
 pub enum TournamentPrivacy {

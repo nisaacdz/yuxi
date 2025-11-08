@@ -1,6 +1,7 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ListSchema<T> {
     pub data: Vec<T>,
 }
@@ -13,7 +14,7 @@ impl<U, T: From<U>> From<Vec<U>> for ListSchema<T> {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct PaginatedData<T> {
     pub data: Vec<T>,
     pub page: u64,
