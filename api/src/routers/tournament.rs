@@ -9,7 +9,8 @@ use axum::{
 use app::persistence::tournaments::{create_tournament, get_tournament, search_tournaments};
 use app::state::AppState;
 use models::params::tournament::CreateTournamentParams;
-use models::schemas::tournament::TournamentSchema;
+use models::schemas::pagination::PaginatedData;
+use models::schemas::tournament::{Tournament, TournamentSchema};
 use models::{queries::TournamentPaginationQuery, schemas::user::AuthSchema};
 
 use crate::{ApiResponse, error::ApiError};
@@ -18,7 +19,20 @@ use crate::{
     extractor::{Json, Valid},
 };
 
-async fn tournaments_post(
+#[utoipa::path(
+    post,
+    path = "/api/v1/tournaments",
+    tag = "tournaments",
+    request_body = CreateTournamentParams,
+    responses(
+        (status = 200, description = "Tournament created successfully", body = ApiResponse<TournamentSchema>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+pub async fn tournaments_post(
     state: State<AppState>,
     Extension(auth_state): Extension<AuthSchema>,
     Valid(Json(params)): Valid<Json<CreateTournamentParams>>,
@@ -42,8 +56,19 @@ async fn tournaments_post(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/tournaments",
+    tag = "tournaments",
+    params(
+        TournamentPaginationQuery
+    ),
+    responses(
+        (status = 200, description = "Tournaments retrieved successfully", body = ApiResponse<PaginatedData<Tournament>>),
+    )
+)]
 #[axum::debug_handler]
-async fn tournaments_get(
+pub async fn tournaments_get(
     state: State<AppState>,
     Extension(auth_state): Extension<AuthSchema>,
     Query(query): Query<TournamentPaginationQuery>,
@@ -67,8 +92,20 @@ async fn tournaments_get(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/tournaments/{id}",
+    tag = "tournaments",
+    params(
+        ("id" = String, Path, description = "Tournament ID")
+    ),
+    responses(
+        (status = 200, description = "Tournament retrieved successfully", body = ApiResponse<TournamentSchema>),
+        (status = 404, description = "Tournament not found"),
+    )
+)]
 #[axum::debug_handler]
-async fn tournaments_id_get(
+pub async fn tournaments_id_get(
     state: State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {

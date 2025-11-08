@@ -1,20 +1,25 @@
 use chrono::{DateTime, Utc};
 use sea_orm::prelude::DateTimeUtc;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::domains::{sea_orm_active_enums::TournamentPrivacy, tournaments};
 
 use super::typing::TextOptions;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, ToSchema)]
 pub struct TournamentSchema {
     pub id: String,
     pub title: String,
     pub description: String,
+    #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
     pub created_by: String,
+    #[schema(value_type = String, format = DateTime)]
     pub scheduled_for: DateTimeUtc,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub started_at: Option<DateTimeUtc>,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub ended_at: Option<DateTimeUtc>,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
@@ -37,7 +42,7 @@ impl From<tournaments::Model> for TournamentSchema {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TournamentListSchema {
     pub tournaments: Vec<TournamentSchema>,
 }
@@ -53,7 +58,7 @@ impl From<Vec<tournaments::Model>> for TournamentListSchema {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct TournamentSession {
     pub id: String,
     pub scheduled_for: DateTime<Utc>,
@@ -76,27 +81,32 @@ impl TournamentSession {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Tournament {
     pub id: String,
     pub title: String,
     pub creator: String,
+    #[schema(value_type = String, format = DateTime)]
     pub scheduled_for: DateTimeUtc,
     pub description: String,
     pub privacy: TournamentPrivacy,
     pub text_options: Option<TextOptions>,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub started_at: Option<DateTimeUtc>,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub ended_at: Option<DateTimeUtc>,
     pub participating: bool,
     pub participant_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentLiveData {
     pub participant_count: usize,
     pub participating: bool,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub started_at: Option<DateTimeUtc>,
+    #[schema(value_type = Option<String>, format = DateTime)]
     pub ended_at: Option<DateTimeUtc>,
 }

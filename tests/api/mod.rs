@@ -1,6 +1,7 @@
 use api::{setup_config, setup_router};
 use utils::testing::setup_test_db;
 
+mod openapi;
 mod root;
 mod user;
 
