@@ -3,22 +3,36 @@ mod error;
 mod extractor;
 mod init;
 mod middleware;
+mod openapi;
 mod validation;
 
 pub mod models;
 pub mod routers;
 
+pub use openapi::ApiDoc;
+
 pub use init::{setup_config, setup_db, setup_router};
 use serde::Serialize;
+#[allow(unused_imports)]
+use serde_json::json;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// A generic structure for API responses.
 ///
 /// This type is sent to the client in the http response body
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
+#[schema(example = json!({
+    "success": true,
+    "message": "Operation completed successfully",
+    "data": null
+}))]
 pub struct ApiResponse<T: Serialize> {
+    /// Indicates whether the operation was successful
     success: bool,
+    /// A human-readable message describing the result
     message: String,
+    /// Optional data payload
     data: Option<T>,
 }
 

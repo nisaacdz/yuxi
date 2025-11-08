@@ -1,9 +1,12 @@
 use axum::Router;
 use axum::http::{HeaderName, HeaderValue, Method, header};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::action::register_tournament_namespace;
 use crate::middleware::extension::extension;
+use crate::openapi::ApiDoc;
 use crate::routers::create_router;
 use app::cache::{TournamentRegistry, TypingSessionRegistry};
 use app::config::Config;
@@ -53,6 +56,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
     }
 
     create_router(app_state.clone())
+        .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
         .layer(socket_layer)
         .layer(axum::middleware::from_fn_with_state(app_state, extension))

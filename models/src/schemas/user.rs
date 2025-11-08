@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::domains::users;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct AuthSchema {
     pub user: Option<UserSchema>,
 }
@@ -15,12 +16,12 @@ impl AuthSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct TournamentRoomUserProfile {
     pub username: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct TournamentRoomMember {
     pub id: String,
     pub user: Option<TournamentRoomUserProfile>,
@@ -48,7 +49,7 @@ impl TournamentRoomMember {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct UserSchema {
     pub id: String,
     pub username: String,
@@ -65,13 +66,13 @@ impl From<users::Model> for UserSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct LoginSchema {
     pub user: UserSchema,
     pub tokens: TokensSchema,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct TokensSchema {
     pub access: String,
 }

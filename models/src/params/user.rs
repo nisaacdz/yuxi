@@ -1,7 +1,8 @@
 use serde::Deserialize;
+use utoipa::ToSchema;
 use validator::Validate;
 
-#[derive(Deserialize, Validate, Debug)]
+#[derive(Deserialize, Validate, Debug, ToSchema)]
 pub struct CreateUserParams {
     #[validate(email)]
     pub email: String,
@@ -9,18 +10,18 @@ pub struct CreateUserParams {
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AuthCodeParams {
     pub code: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailAuthParams {
     pub email: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub struct LoginUserParams {
     #[validate(email)]
     pub email: String,
@@ -28,13 +29,13 @@ pub struct LoginUserParams {
     pub password: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub struct UpdateUserParams {
     #[validate(length(min = 2))]
     pub username: Option<String>,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub struct ResetPasswordBody {
     #[validate(email)]
     pub email: String,
@@ -44,7 +45,7 @@ pub struct ResetPasswordBody {
     pub password: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub struct ForgotPasswordBody {
     #[validate(email)]
     pub email: String,

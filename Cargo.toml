@@ -21,7 +21,7 @@ sea-orm = { version = "1.0.0", default-features = false }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", default-features = false }
 tracing = "0.1.40"
-utoipa = { version = "5.3.1", default-features = false }
+utoipa = { version = "5.3.1", default-features = false, features = ["chrono"] }
 validator = { version = "0.20.0", default-features = false }
 chrono = { version = "0.4.40", features = ["serde"] }
 random_word = { version = "0.5.0", features = ["en"] }

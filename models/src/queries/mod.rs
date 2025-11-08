@@ -1,10 +1,12 @@
 use serde::Deserialize;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{domains::sea_orm_active_enums::TournamentPrivacy, schemas::typing::TournamentStatus};
 
 pub mod user;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct TournamentPaginationQuery {
     pub page: Option<u64>,
     pub limit: Option<u64>,

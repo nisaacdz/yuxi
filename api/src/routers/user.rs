@@ -22,7 +22,17 @@ use crate::extractor::{Json, Valid};
 
 use super::auth::me_get;
 
-async fn users_post(
+#[utoipa::path(
+    post,
+    path = "/api/v1/users",
+    tag = "users",
+    request_body = CreateUserParams,
+    responses(
+        (status = 201, description = "User created successfully", body = UserSchema),
+        (status = 400, description = "Invalid input"),
+    )
+)]
+pub async fn users_post(
     state: State<AppState>,
     Valid(Json(params)): Valid<Json<CreateUserParams>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -32,7 +42,19 @@ async fn users_post(
     Ok((StatusCode::CREATED, Json(UserSchema::from(user))))
 }
 
-async fn users_id_get(
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/{id}",
+    tag = "users",
+    params(
+        ("id" = String, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User found", body = UserSchema),
+        (status = 404, description = "User not found"),
+    )
+)]
+pub async fn users_id_get(
     state: State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -42,8 +64,21 @@ async fn users_id_get(
         .ok_or_else(|| CustomError::new(StatusCode::NOT_FOUND, "user not found".into()).into())
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/users/me",
+    tag = "users",
+    request_body = UpdateUserParams,
+    responses(
+        (status = 201, description = "User updated successfully", body = UserSchema),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 #[axum::debug_handler]
-async fn current_user_update(
+pub async fn current_user_update(
     state: State<AppState>,
     Extension(auth_state): Extension<AuthSchema>,
     Valid(Json(params)): Valid<Json<UpdateUserParams>>,
