@@ -1,5 +1,6 @@
+use crate::core::{algorithm::*, dtos::*};
 use anyhow::Result;
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{TimeDelta, Utc};
 use models::{
     params::tournament::UpdateTournamentParams,
     schemas::{
@@ -8,7 +9,6 @@ use models::{
         user::TournamentRoomMember,
     },
 };
-use serde::{Deserialize, Serialize};
 use socketioxide::extract::{Data, SocketRef};
 use std::{
     sync::{Arc, RwLock},
@@ -38,154 +38,6 @@ const MAX_PROCESS_STACK_SIZE: usize = 5;
 const UPDATE_ALL_DEBOUNCE_DURATION: Duration = Duration::from_millis(1000);
 const UPDATE_ALL_MAX_STACK_SIZE: usize = 20;
 const UPDATE_ALL_MAX_WAIT: Duration = Duration::from_secs(3);
-
-#[derive(Serialize, Debug, Clone)]
-pub struct WsFailurePayload {
-    code: i32,
-    message: String,
-}
-
-impl WsFailurePayload {
-    pub fn new(code: i32, message: &str) -> Self {
-        Self {
-            code,
-            message: message.to_string(),
-        }
-    }
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ParticipantData {
-    member: TournamentRoomMember,
-    current_position: usize,
-    correct_position: usize,
-    total_keystrokes: i32,
-    current_speed: f32,
-    current_accuracy: f32,
-    started_at: Option<DateTime<Utc>>,
-    ended_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Serialize, Debug, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-struct PartialParticipantData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    current_position: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    correct_position: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    total_keystrokes: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    current_speed: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    current_accuracy: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    started_at: Option<DateTime<Utc>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ended_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct PartialParticipantDataForUpdate<'a> {
-    member_id: &'a str,
-    updates: PartialParticipantData,
-}
-
-#[derive(Serialize, Debug, Clone)]
-struct UpdateMePayload {
-    updates: PartialParticipantData,
-    rid: i32,
-}
-
-#[derive(Serialize, Debug, Clone)]
-struct UpdateAllPayload<'a> {
-    updates: Vec<PartialParticipantDataForUpdate<'a>>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TournamentData {
-    id: String,
-    title: String,
-    created_at: DateTime<Utc>,
-    created_by: String,
-    scheduled_for: DateTime<Utc>,
-    description: String,
-    started_at: Option<DateTime<Utc>>,
-    ended_at: Option<DateTime<Utc>>,
-    scheduled_end: Option<DateTime<Utc>>,
-    text: Option<String>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct PartialTournamentData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scheduled_for: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    started_at: Option<DateTime<Utc>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ended_at: Option<DateTime<Utc>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct JoinSuccessPayload {
-    data: TournamentData,
-    member: TournamentRoomMember,
-    participants: Vec<ParticipantData>,
-    noauth: String,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ParticipantJoinedPayload {
-    participant: ParticipantData,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ParticipantLeftPayload {
-    member_id: String,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct LeaveSuccessPayload {
-    message: String,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct UpdateDataPayload {
-    updates: PartialTournamentData,
-}
-
-#[derive(Deserialize, Debug)]
-struct TypeEventPayload {
-    character: char,
-    rid: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-struct ProgressEventPayload {
-    correct_position: usize,
-    current_position: usize,
-    total_keystrokes: i32,
-    rid: i32,
-}
 
 struct TournamentManagerInner {
     tournament_id: Arc<String>,
@@ -233,6 +85,7 @@ impl TournamentManagerInner {
 
 #[derive(Clone)]
 pub struct TournamentManager {
+    algorithm: Arc<dyn TypingAlgorithm + Sync + Send>,
     inner: Arc<TournamentManagerInner>,
     update_all_broadcaster: Debouncer,
 }
@@ -268,6 +121,7 @@ impl TournamentManager {
             Self::create_update_all_broadcaster(inner_manager_state.clone());
 
         let manager = Self {
+            algorithm: Arc::new(ZeroProceed),
             inner: inner_manager_state,
             update_all_broadcaster: update_all_broadcaster.clone(),
         };
@@ -427,12 +281,7 @@ impl TournamentManager {
         }
     }
 
-    pub async fn connect(
-        self,
-        socket: SocketRef,
-        spectator: bool,
-        noauth: String,
-    ) -> Result<()> {
+    pub async fn connect(self, socket: SocketRef, spectator: bool, noauth: String) -> Result<()> {
         let member_schema = socket
             .extensions
             .get::<Arc<TournamentRoomMember>>()
@@ -447,13 +296,10 @@ impl TournamentManager {
             };
 
             let scheduled_for = self.inner.tournament_meta.scheduled_for;
-            let join_deadline = TimeDelta::from_std(JOIN_DEADLINE)
-                .unwrap_or_else(|_| TimeDelta::seconds(15));
+            let join_deadline =
+                TimeDelta::from_std(JOIN_DEADLINE).unwrap_or_else(|_| TimeDelta::seconds(15));
 
-            if ended_at.is_some()
-                || started_at.is_some()
-                || (scheduled_for - now < join_deadline)
-            {
+            if ended_at.is_some() || started_at.is_some() || (scheduled_for - now < join_deadline) {
                 error!(member_id = %member_schema.id, "Tournament no longer accepting participants.");
                 let failure_payload =
                     WsFailurePayload::new(1004, "Tournament no longer accepting participants.");
@@ -571,79 +417,17 @@ impl TournamentManager {
             .get::<Arc<TournamentRoomMember>>()
             .unwrap();
 
-        let text_len = self.inner.typing_text.read().unwrap().len();
+        let rid = progress.rid;
 
-        let ProgressEventPayload {
-            correct_position,
-            current_position,
-            total_keystrokes,
-            rid,
-        } = progress;
+        let original = self.inner.typing_text.read().unwrap().clone();
 
-        if current_position > text_len
-            || correct_position > text_len
-            || correct_position > current_position
-        {
-            warn!(member_id = %member.id, "Received invalid progress data. Ignoring.");
-            let failure_payload = WsFailurePayload::new(2212, "Invalid progress data.");
-            socket.emit("progress:failure", &failure_payload).ok();
-            return;
-        }
-
-        // 2. Perform the atomic update using the cache's callback
-        let now = Utc::now();
         let update_result = self.inner.participants.update_data(
             &member.id,
             // This closure contains all the mutation logic.
             // It receives `&mut TypingSessionSchema`.
-            |session| {
-                if session.ended_at.is_some() {
-                    return Err(WsFailurePayload::new(2211, "Your session has ended."));
-                }
-
-                if session.started_at.is_none() {
-                    session.started_at = Some(now);
-                }
-
-                session.current_position = current_position;
-                session.correct_position = correct_position;
-                session.total_keystrokes = total_keystrokes;
-
-                if let Some(started_at) = session.started_at {
-                    let duration = now.signed_duration_since(started_at);
-                    let minutes_elapsed =
-                        (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
-
-                    session.current_speed =
-                        (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
-                    session.current_accuracy = if session.total_keystrokes > 0 {
-                        ((session.correct_position as f32 / session.total_keystrokes as f32)
-                            * 100.0)
-                            .round()
-                            .clamp(0.0, 100.0)
-                    } else {
-                        100.0
-                    };
-                }
-
-                if session.correct_position == text_len && session.ended_at.is_none() {
-                    session.ended_at = Some(now);
-                    info!(
-                        member_id = %session.member.id,
-                        tournament_id = %session.tournament_id,
-                        "User finished typing challenge via progress update"
-                    );
-                }
-
-                Ok(PartialParticipantData {
-                    current_position: Some(session.current_position),
-                    correct_position: Some(session.correct_position),
-                    total_keystrokes: Some(session.total_keystrokes),
-                    current_speed: Some(session.current_speed),
-                    current_accuracy: Some(session.current_accuracy),
-                    started_at: session.started_at,
-                    ended_at: session.ended_at,
-                })
+            move |session| {
+                self.algorithm
+                    .handle_progress(session, progress, original.as_bytes())
             },
         );
 
@@ -677,61 +461,37 @@ impl TournamentManager {
             .extensions
             .get::<Arc<TournamentRoomMember>>()
             .unwrap();
-
-        if typed_chars.is_empty() {
-            warn!(member_id = %member.id, "Received empty typing event. Ignoring.");
-            return;
-        }
-
         let cache = self.inner.participants.clone();
+        let original = self.inner.typing_text.read().unwrap().clone();
 
-        let typing_session = match cache.get_data(&member.id) {
-            Some(session) => session,
+        let update_result = cache.update_data(&member.id, move |session| {
+            self.algorithm
+                .handle_type(session, &typed_chars, original.as_bytes())
+        });
+
+        match update_result {
+            Some(Ok(changes)) => {
+                let update_me_payload = UpdateMePayload {
+                    updates: changes,
+                    rid,
+                };
+                if let Err(e) = socket.emit("update:me", &update_me_payload) {
+                    warn!("Failed to send update:me to {}: {}", member.id, e);
+                }
+                self.update_all_broadcaster.trigger();
+            }
+
+            Some(Err(failure_payload)) => {
+                warn!(member_id = %member.id, "Type event failed: {}", failure_payload.message);
+                socket.emit("type:failure", &failure_payload).ok();
+            }
+
             None => {
-                warn!(member_id = %member.id, "Typing event received, but no active session found.");
+                warn!(member_id = %member.id, "Type event received, but no active session found.");
                 let failure_payload = WsFailurePayload::new(2210, "Member ID not found.");
                 socket.emit("type:failure", &failure_payload).ok();
-                return;
             }
-        };
-
-        if typing_session.ended_at.is_some() {
-            warn!(member_id = %typing_session.member.id, "Received typing input after session ended. Ignoring.");
-            let failure_payload = WsFailurePayload::new(2211, "Your session has ended.");
-            socket.emit("type:failure", &failure_payload).ok();
-            return;
         }
-
-        let typing_text = self.inner.typing_text.read().unwrap().clone();
-
-        let challenge_text_bytes = typing_text.as_bytes();
-
-        let now = Utc::now();
-        let updated_session =
-            process_typing_input(typing_session, typed_chars, challenge_text_bytes, now);
-
-        cache.set_data(&updated_session.member.id, updated_session.clone());
-
-        let changes = PartialParticipantData {
-            current_position: Some(updated_session.current_position),
-            correct_position: Some(updated_session.correct_position),
-            total_keystrokes: Some(updated_session.total_keystrokes),
-            current_speed: Some(updated_session.current_speed),
-            current_accuracy: Some(updated_session.current_accuracy),
-            started_at: updated_session.started_at,
-            ended_at: updated_session.ended_at,
-        };
-
-        let update_me_payload = UpdateMePayload {
-            updates: changes,
-            rid,
-        };
-
-        if let Err(e) = socket.emit("update:me", &update_me_payload) {
-            warn!("Failed to send update:me to {}: {}", member.id, e);
-        }
-
-        self.update_all_broadcaster.trigger();
     }
 
     fn register_type_listeners(&self, socket: SocketRef, secure: bool) {
@@ -1073,24 +833,19 @@ impl TournamentManager {
     }
 
     pub async fn shutdown(&self) {
-        let mut session_data = self.inner.tournament_session_state.lock().await;
-
-        // 1. Idempotency Check: If already ending/ended, do nothing.
-        if session_data.ended_at.is_some() {
-            return;
-        }
-
-        // 2. Mark as Ended
         let now = Utc::now();
-        session_data.ended_at = Some(now);
-        std::mem::drop(session_data); // Release lock
+        self.inner
+            .tournament_session_state
+            .lock()
+            .await
+            .ended_at
+            .get_or_insert(now);
 
         info!(
             "Shutting down manager for tournament {}",
             &*self.inner.tournament_id
         );
 
-        // 3. Persist Final State to Database
         if let Err(e) = update_tournament(
             &self.inner.app_state,
             UpdateTournamentParams {
@@ -1104,16 +859,12 @@ impl TournamentManager {
             error!("Failed to persist final tournament state: {}", e);
         }
 
-        // 4. Broadcast Final Update
         self.inner.broadcast_update_data(false).await;
 
-        // 6. Shutdown Internal Components
         self.update_all_broadcaster.shutdown().await;
 
-        // 7. Schedule Final Eviction of the Manager
         let manager_clone = self.clone();
         let evict_task = async move {
-            // 5. Clean Up All Associated State (Fixing the Gap)
             let participant_ids: Vec<String> = manager_clone.inner.participants.keys();
             for member_id in participant_ids {
                 manager_clone.inner.participants.delete_data(&member_id);
@@ -1139,85 +890,7 @@ impl TournamentManager {
             );
         };
 
-        // The 10-minute grace period remains.
         let evict_on = Utc::now() + TimeDelta::minutes(10);
         crate::scheduler::schedule_new_task(evict_task, evict_on).ok();
     }
-}
-
-fn process_typing_input(
-    mut session: TypingSessionSchema,
-    typed_chars: Vec<char>,
-    challenge_text: &[u8],
-    now: DateTime<Utc>,
-) -> TypingSessionSchema {
-    if session.started_at.is_none() {
-        session.started_at = Some(now);
-    }
-
-    let text_len = challenge_text.len();
-
-    for current_char in typed_chars {
-        if session.correct_position >= text_len {
-            warn!(user_id=%session.member.id, "Received typing input after session ended. Ignoring.");
-            break;
-        }
-
-        if current_char == '\u{8}' {
-            // Backspace character (`\b` or unicode backspace)
-            if session.current_position > session.correct_position {
-                session.current_position -= 1;
-            } else if session.current_position == session.correct_position
-                && session.current_position > 0
-            {
-                if challenge_text[session.current_position - 1] != b' ' {
-                    session.correct_position -= 1;
-                    session.current_position -= 1;
-                }
-            }
-            // If current_position is 0, backspace does nothing.
-            // No change to total_keystrokes for backspace.
-        } else {
-            session.total_keystrokes += 1;
-
-            if session.current_position < text_len {
-                let expected_char = challenge_text[session.current_position];
-                if session.current_position == session.correct_position
-                    && (current_char as u32) == (expected_char as u32)
-                {
-                    session.correct_position += 1;
-                }
-                session.current_position += 1;
-            }
-        }
-
-        if session.correct_position == text_len && session.ended_at.is_none() {
-            session.ended_at = Some(now);
-            session.current_position = session.correct_position;
-            info!(member_id = %session.member.id, tournament_id = %session.tournament_id, "User finished typing challenge");
-            break;
-        }
-    }
-
-    if let Some(started_at) = session.started_at {
-        let end_time = session.ended_at.unwrap_or(now);
-        let duration = end_time.signed_duration_since(started_at);
-
-        let minutes_elapsed = (duration.num_milliseconds() as f32 / 60000.0).max(0.0001);
-
-        session.current_speed = (session.correct_position as f32 / 5.0 / minutes_elapsed).round();
-
-        session.current_accuracy = if session.total_keystrokes > 0 {
-            ((session.correct_position as f32 / session.total_keystrokes as f32) * 100.0)
-                .round()
-                .clamp(0.0, 100.0)
-        } else {
-            100.0
-        };
-    } else {
-        session.current_speed = 0.0;
-        session.current_accuracy = 100.0;
-    }
-
-    session
 }
