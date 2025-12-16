@@ -244,6 +244,14 @@ impl<T> Cache<T> {
         conn.get_mut(id).map(|data| update(data))
     }
 
+    pub fn read_data<F, O>(&self, id: &str, read: F) -> Option<O>
+    where
+        F: FnOnce(&T) -> O,
+    {
+        let conn = self.get_connection();
+        conn.get(id).map(|data| read(data))
+    }
+
     pub fn delete_data(&self, id: &str) -> Option<T> {
         let mut conn = self.get_connection();
         conn.remove(id)
