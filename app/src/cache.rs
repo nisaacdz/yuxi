@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -205,7 +205,7 @@ use crate::core::TournamentManager;
 // }
 
 pub struct Cache<T> {
-    data: Arc<Mutex<BTreeMap<String, T>>>,
+    data: Arc<Mutex<HashMap<String, T>>>,
 }
 
 impl<T> Clone for Cache<T> {
@@ -219,10 +219,10 @@ impl<T> Clone for Cache<T> {
 impl<T> Cache<T> {
     pub fn new() -> Self {
         Self {
-            data: Arc::new(Mutex::new(BTreeMap::new())),
+            data: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    fn get_connection(&self) -> MutexGuard<'_, BTreeMap<String, T>> {
+    fn get_connection(&self) -> MutexGuard<'_, HashMap<String, T>> {
         self.data.lock().unwrap()
     }
 
