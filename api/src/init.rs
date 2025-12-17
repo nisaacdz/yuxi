@@ -31,7 +31,7 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         ])
         .allow_origin(
             config
-                .allowed_origin
+                .allowed_origins
                 .parse::<HeaderValue>()
                 .expect("Failed to parse allowed origin"),
         )

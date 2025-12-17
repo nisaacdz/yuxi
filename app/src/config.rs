@@ -36,7 +36,7 @@ pub struct ConfigInner {
     pub db_url: String,
     pub host: String,
     pub port: u16,
-    pub allowed_origin: String,
+    pub allowed_origins: Vec<String>,
     // pub prefork: bool,
     pub encoding_key: EncodingKey,
     pub decoding_key: DecodingKey,
@@ -115,7 +115,7 @@ impl Config {
                 .expect("PORT is required")
                 .parse()
                 .expect("PORT is not a number"),
-            allowed_origin: std::env::var("ALLOWED_ORIGIN").expect("ALLOWED_ORIGIN is required"),
+            allowed_origins: std::env::var("ALLOWED_ORIGINS").expect("ALLOWED_ORIGIN is required").split(",").map(ToOwned::to_owned).collect::<Vec<_>>(),
             encoding_key: EncodingKey::from_secret(
                 std::env::var("JWT_SECRET")
                     .expect("JWT_SECRET is required")
