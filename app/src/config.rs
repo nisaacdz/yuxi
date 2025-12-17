@@ -115,7 +115,17 @@ impl Config {
                 .expect("PORT is required")
                 .parse()
                 .expect("PORT is not a number"),
-            allowed_origins: std::env::var("ALLOWED_ORIGINS").expect("ALLOWED_ORIGIN is required").split(",").map(ToOwned::to_owned).collect::<Vec<_>>(),
+            allowed_origins: std::env::var("ALLOWED_ORIGINS")
+                .expect("ALLOWED_ORIGIN is required")
+                .split(",")
+                .filter_map(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_owned())
+                    }
+                })
+                .collect::<Vec<_>>(),
             encoding_key: EncodingKey::from_secret(
                 std::env::var("JWT_SECRET")
                     .expect("JWT_SECRET is required")
