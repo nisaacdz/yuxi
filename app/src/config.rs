@@ -116,7 +116,7 @@ impl Config {
                 .parse()
                 .expect("PORT is not a number"),
             allowed_origins: std::env::var("ALLOWED_ORIGINS")
-                .expect("ALLOWED_ORIGIN is required")
+                .expect("ALLOWED_ORIGINS is required")
                 .split(",")
                 .filter_map(|s| {
                     if s.is_empty() {
