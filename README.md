@@ -1,5 +1,8 @@
 # WebSocket API Specification: Typing Tournament
 
+## 0. Quick Demo
+A live demo client is available at: [https://itchyfingers-cbfb0.web.app](https://itchyfingers-cbfb0.web.app/)
+
 This document describes the real-time and HTTP APIs as implemented in the current codebase. It aligns all terms, events, and payloads with the authoritative Rust implementation.
 
 ## 1. Core Principles
