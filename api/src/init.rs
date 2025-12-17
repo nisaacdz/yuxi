@@ -32,8 +32,9 @@ pub fn setup_router(config: Config, conn: DatabaseConnection) -> Router {
         .allow_origin(
             config
                 .allowed_origins
-                .parse::<HeaderValue>()
-                .expect("Failed to parse allowed origin"),
+                .iter()
+                .map(|s| s.parse::<HeaderValue>().expect("Failed to parse allowed origin"))
+                .collect::<Vec<_>>()
         )
         .allow_credentials(true);
 
